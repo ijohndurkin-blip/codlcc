@@ -12,7 +12,7 @@ import { CarSystem } from './cars.js';
 import { Civilians } from './civilians.js';
 import { Effects } from './effects.js';
 import { AudioEngine } from './audio.js';
-import { Player } from './player.js';
+import { Player, WEAPONS, ORDER } from './player.js';
 import { Enemies } from './enemies.js';
 import { UI } from './ui.js';
 
@@ -141,7 +141,9 @@ async function boot() {
   const ui = new UI();
   const player = new Player({ camera, vmScene, vmCamera, audio, T, canvas });
   const enemies = new Enemies({ scene, T, audio, effects: fx, cars, player });
-  const civ = new Civilians({ scene, world, carSys, audio, enemies });
+  const civ = new Civilians({ scene, world, carSys, audio, enemies, fx });
+  // nobody takes cover where the valeter is washing the Corsa
+  enemies.covers = enemies.covers.filter((c) => !(c.z === LAYOUT.lanes.a3 && c.x < -23.8));
 
   // ---------- post ----------
   await progress(88, 'Calibrating optics…');
@@ -208,7 +210,7 @@ async function boot() {
     raycaster.set(origin, dir);
     const hits = raycaster.intersectObjects(shootTargets, true);
     let end = origin.clone().addScaledVector(dir, 400);
-    let throughGlass = false, pierce = W.pierce || 0, kills = 0, counted = false;
+    let throughGlass = false, pierce = W.pierce || 0, kills = 0, counted = false, stopped = false;
     const seen = new Set();
     const stopHere = (h) => { end = h.point.clone(); return pierce-- <= 0; };
     for (const h of hits) {
@@ -236,6 +238,7 @@ async function boot() {
         if (ud.carPart === 'glass') { throughGlass = true; continue; }
         if (res.penetrate && !stopHere(h)) continue;
         end = h.point.clone();
+        stopped = true;
         break;
       }
       if (ud.soldier) {
@@ -275,20 +278,48 @@ async function boot() {
         const boom = enemies.hitTruck(ud.truck, ud.part, h.point, normal);
         fx.decal(h.point, normal, 1);
         if (boom) { G.hits++; ui.hitmarker(false); }
+        if (W.pierceWorld) continue;
       } else {
         fx.impactDust(h.point, normal);
         fx.decal(h.point, normal, W.power >= 3 ? 2 : 1.2);
         audio.impact('dirt', h.point);
+        // the railgun goes straight through walls, it only stops when it hits the ground
+        if (W.pierceWorld && normal.y < 0.7) continue;
       }
+      stopped = true;
       break;
     }
+    if (W.explosive && (stopped || pierce < (W.pierce || 0))) explosiveRound(end, W.explosive);
     if (kills >= 2) { G.score += 100 * (kills - 1); setTimeout(() => ui.points([[`+${100 * (kills - 1)} COLLATERAL x${kills}`, true]]), 300); }
+    if (W.rail) {
+      const col = W.explosive ? 0xffa040 : 0x55c8ff;
+      fx.tracer(muzzle, end, { trail: true, life: 1.4, width: 0.07, color: col });
+      fx.tracer(muzzle, end, { trail: true, life: 0.5, width: 0.16, color: col });
+      fx.flashLight(muzzle, 30, 0.15, col);
+    }
     fx.tracer(muzzle, end, { trail: true, life: 0.7, width: W.power >= 3 ? 0.04 : 0.022, color: 0xdfe8ff });
     fx.tracer(muzzle, end, { color: 0xffe2a8, width: W.power >= 3 ? 0.05 : 0.03, speed: 900, len: 8 });
     fx.muzzle(muzzle, dir, true);
     fx.flashLight(muzzle, W.power >= 3 ? 35 : 20, 0.07);
   };
 
+  function explosiveRound(pos, radius) {
+    fx.grenadeBlast(pos.clone());
+    audio.explosion(pos.clone(), false);
+    for (const c of carSys.all) {
+      const d = c.position.distanceTo(pos);
+      if (d < radius + 1.5) { carSys.alarm(c, 1); carSys.damage(c, d < radius * 0.6 ? 6 : 3); }
+    }
+    blastAt(pos, radius, true);
+  }
+
+  const RIFLE_LINES = {
+    fifty: 'had a .50 cal stashed away. It\'s yours now.',
+    he: 'was sitting on a crate of explosive .50 cal rounds. Load up.',
+    rail: 'had an XR-9 railgun in the back. It goes through walls.',
+    gold: 'had the GOLDEN RAILGUN. Explosive rail rounds. Absolute scenes.',
+  };
+  const WHO = { craig: 'Craig', kev: 'Kev Jones', mech: 'the Merton Garages mechanic', val: 'the valeter' };
   function civilianKilled(c, { headshot = false, dist = 0 } = {}) {
     G.kills++;
     const pts = 500 + (headshot ? 50 : 0);
@@ -298,14 +329,17 @@ async function boot() {
     const now = performance.now();
     if (now - G.lastKeh > 350) { audio.keh(); G.lastKeh = now; }
     ui.kehPop();
-    const nice = c.id === 'craig' ? 'Craig' : 'Kev Jones';
+    const nice = { craig: 'Craig', kev: 'Kev Jones', mech: 'Merton Garages mechanic', val: 'Valeter' }[c.id] || c.name;
     ui.feed(`<span class="you">YOU</span> ⌖ ${nice} ${headshot ? '<span class="hs">HEADSHOT</span> ' : ''}<span class="keh">"Keh"</span>`);
-    if (!player.unlocked.fifty) {
+    if (c.upgrades) {
       setTimeout(() => {
-        player.unlock('fifty');
+        const got = player.unlockNext();
+        if (!got) { ui.banner('MAXED OUT', 'YOU ALREADY HAVE THE GOLDEN RAILGUN', 2500); return; }
+        const W = WEAPONS[got], key = ORDER.indexOf(got) + 1;
         audio.stinger();
-        ui.banner('NEW WEAPON UNLOCKED', '.50 CAL ANTI-MATERIEL · [1] / [2] / [Q] TO SWAP', 4000);
-        sayRadio('HQ', c.id === 'craig' ? 'Craig had a .50 cal stashed in the office. It\'s yours now.' : 'Kev had a .50 cal in the boot of the 3 Series. Help yourself.', 4000);
+        ui.banner('RIFLE UPGRADE', `${W.name} · PRESS [${key}] OR [Q] TO SWAP`, 4000);
+        const who = WHO[c.id];
+        sayRadio('HQ', `${who[0].toUpperCase()}${who.slice(1)} ${RIFLE_LINES[got]}`, 4200);
       }, 900);
     }
   }

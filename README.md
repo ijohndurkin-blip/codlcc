@@ -35,7 +35,7 @@ Import the repo in Vercel. It auto-detects Vite (`vercel.json` pins it anyway):
 | C or Ctrl | Crouch behind the parapet (dodges incoming fire) |
 | W A S D | Move along the rooftop |
 | R | Reload |
-| 1 / 2 / Q | Swap rifle (once the .50 cal is unlocked) |
+| 1–5 / Q | Swap rifle (once unlocked) |
 | Esc | Pause |
 
 ## The "Keh"
@@ -47,17 +47,44 @@ On every kill the game says "Keh". It uses the first one of these it finds:
 2. **A sound file:** drop a `keh.mp3` into `public/` before deploying.
 3. **Text-to-speech** built into the browser.
 
-## Craig, Kev Jones and the .50 cal
+## The cast (all fictional)
 
-- **Craig** (fictional), the wee bald Scottish owner, comes out of the sliding showroom door now and again and
-  shouts **"Get yourself away!"**
-- **Kev Jones** (fictional), a short, bald car trader, turns up in his **pale blue 3 Series**, parks at the kerb,
-  walks over to haggle with Craig, then drives off.
-- Drop **either** of them and you unlock the **.50 CAL ANTI-MATERIEL**. It's semi-auto with an 8-round mag and
-  zooms to 16x. It goes through bodies and cars, and anything it hits goes down. Swap with `1`/`2` or `Q`.
-- They come back on later waves.
-- Craig's voice works like the Keh: hit **🎙 RECORD CRAIG'S SHOUT** on the menu, or drop a `craig.mp3` into
-  `public/`. Otherwise text-to-speech does it, using a Scottish voice if your system has one.
+- **Craig**, the wee bald Scottish owner, comes out of the sliding showroom door now and again and shouts
+  **"Get yourself away!"**
+- **Kev Jones**, a short, bald car trader, turns up in his **pale blue 3 Series**, parks at the kerb, walks over to
+  haggle with Craig, then drives off.
+- **The mechanic from Merton Garages** (navy overalls) pulls up in a **black BMW X6** and walks into the
+  showroom. He comes back out, gets in a car on the forecourt, drives it out onto the road and pulls up at
+  the kerb. Then he gets out, waves a white sheet of paper in the air and shouts **"M-O-T done!"**. He walks
+  back into the showroom, comes out again and drives off in the X6.
+- **The valeter**, a bodybuilder, jet-washes a white Corsa outside the open shutter to the left of the showroom.
+
+Kev and the mechanic take turns visiting. Anyone you drop comes back on a later wave.
+
+## The rifle ladder
+
+Every time you drop **Craig, Kev Jones or the mechanic** you move up one rifle. The valeter doesn't count.
+
+| Key | Rifle | What it does |
+| --- | --- | --- |
+| 1 | L115 .338 bolt-action | Where you start. 5 rounds. |
+| 2 | .50 cal anti-materiel | Semi-auto, 8 rounds, 16x zoom. Goes through bodies and cars. |
+| 3 | .50 cal HE-I | Explosive rounds that blow up anything near where they land. |
+| 4 | XR-9 railgun | Goes straight through walls, cars and people, with a blue beam. 20x zoom. |
+| 5 | Golden railgun 'Get Yersel Away' | Railgun plus explosive impact. 12 rounds, 24x zoom. |
+
+Swap with `1`–`5` or `Q`.
+
+## Voices
+
+The voices are recordable, or you can drop sound files into `public/`:
+
+- `keh.mp3`: your kill line
+- `craig.mp3`: "Get yourself away!"
+- `mot.mp3`: "M-O-T done!"
+
+The Keh and Craig's line also have **🎙 record** buttons on the menu. Anything that isn't recorded or supplied
+falls back to the browser's text-to-speech.
 
 ## Shooting the cars up
 

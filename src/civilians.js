@@ -23,6 +23,8 @@ const POSES = {
   walk: { shRx: 0, shRz: -0.1, elR: -0.3, shLx: 0, shLz: 0.1, elL: -0.3, spineX: 0.06, hipsY: 0.94, knee: 0.1 },
   shout: { shRx: -2.75, shRz: -0.2, elR: -0.7, shLx: -0.3, shLz: 0.75, elL: -1.9, spineX: -0.12, hipsY: 0.95, knee: 0.05 },
   chat: { shRx: -0.6, shRz: -0.3, elR: -1.2, shLx: -0.3, shLz: 0.2, elL: -0.9, spineX: 0.02, hipsY: 0.95, knee: 0.05 },
+  wave: { shRx: -3.0, shRz: -0.15, elR: -0.15, shLx: 0.05, shLz: 0.15, elL: -0.2, spineX: -0.05, hipsY: 0.95, knee: 0.04 },
+  wash: { shRx: -0.85, shRz: 0.25, elR: -0.55, shLx: -1.15, shLz: -0.3, elL: -0.5, spineX: 0.12, hipsY: 0.9, knee: 0.25 },
   cower: { shRx: -2.4, shRz: 0.5, elR: -2.2, shLx: -2.4, shLz: -0.5, elL: -2.2, spineX: 0.6, hipsY: 0.6, knee: 1.3 },
 };
 
@@ -35,6 +37,8 @@ export class Person {
     const s = (c, r = 0.85, m = 0) => new THREE.MeshStandardMaterial({ color: c, roughness: r, metalness: m });
     const skin = s(o.skin || 0xd9a487, 0.38);  // a shiny baldy head
     const top = s(o.top), legs = s(o.legs), shoes = s(o.shoes, 0.5);
+    const sleeves = o.sleeves === 'skin' ? skin : o.sleeves ? s(o.sleeves) : top;
+    const b = o.bulk || 1;
     const mk = (geo, mat, parent, x, y, z, part, cast = true) => {
       const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = cast;
       m.userData.civilian = this; m.userData.part = part; parent.add(m); return m;
@@ -42,8 +46,31 @@ export class Person {
     const grp = (parent, x, y, z) => { const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.order = 'ZYX'; parent.add(g); return g; };
     mk(new THREE.BoxGeometry(0.36, 0.2, 0.22), legs, hips, 0, 0, 0, 'torso');
     const spine = this.spine = grp(hips, 0, 0.08, 0);
-    mk(new THREE.BoxGeometry(0.42, 0.5, 0.25), top, spine, 0, 0.27, 0, 'torso');
-    mk(new THREE.SphereGeometry(0.2, 14, 10), top, spine, 0, 0.16, 0.06, 'torso').scale.set(1.05, 0.9, 0.75); // a bit of a belly
+    mk(new THREE.BoxGeometry(0.42 * b, 0.5, 0.25 * (0.6 + 0.4 * b)), top, spine, 0, 0.27, 0, 'torso');
+    if (b > 1.2) {
+      // bodybuilder: pecs, traps, delts
+      for (const x of [-1, 1]) {
+        mk(new THREE.SphereGeometry(0.13, 12, 8), top, spine, x * 0.12, 0.38, 0.1, 'torso').scale.set(1.1, 0.75, 0.6);
+        mk(new THREE.SphereGeometry(0.12, 12, 8), sleeves, spine, x * (0.25 + (b - 1) * 0.13), 0.47, 0, 'torso');
+      }
+      mk(new THREE.SphereGeometry(0.17, 12, 8), skin, spine, 0, 0.5, -0.03, 'torso').scale.set(1.5, 0.55, 0.8);
+    } else {
+      mk(new THREE.SphereGeometry(0.2, 14, 10), top, spine, 0, 0.16, 0.06, 'torso').scale.set(1.05, 0.9, 0.75); // a bit of a belly
+    }
+    if (o.backText) {
+      const c = document.createElement('canvas'); c.width = 256; c.height = 200;
+      const ctx = c.getContext('2d'); ctx.fillStyle = '#' + new THREE.Color(o.top).getHexString(); ctx.fillRect(0, 0, 256, 200);
+      ctx.fillStyle = '#ffffff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = '800 52px Arial, sans-serif'; ctx.fillText(o.backText[0], 128, 70);
+      ctx.font = '700 40px Arial, sans-serif'; ctx.fillText(o.backText[1], 128, 130);
+      ctx.fillStyle = '#e8c020'; ctx.fillRect(20, 165, 216, 10);
+      const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+      const back = mk(new THREE.PlaneGeometry(0.38, 0.3), new THREE.MeshStandardMaterial({ map: t, roughness: 0.8 }), spine, 0, 0.33, -0.128, 'torso', false);
+      back.rotation.y = Math.PI;
+      const badge = mk(new THREE.PlaneGeometry(0.1, 0.08), new THREE.MeshStandardMaterial({ map: t, roughness: 0.8 }), spine, 0.11, 0.42, 0.128, 'torso', false);
+      // reflective strips on the legs
+      this.strips = true;
+    }
     if (o.shirtFront) {
       mk(new THREE.BoxGeometry(0.11, 0.42, 0.02), s(o.shirtFront, 0.7), spine, 0, 0.3, 0.13, 'torso', false);
       mk(new THREE.BoxGeometry(0.045, 0.34, 0.025), s(o.tie, 0.6), spine, 0, 0.3, 0.145, 'torso', false);
@@ -57,13 +84,14 @@ export class Person {
     for (const x of [-1, 1]) mk(new THREE.SphereGeometry(0.03, 8, 6), skin, neck, x * 0.112, 0.12, 0, 'head', false).scale.set(0.5, 1, 0.8);
     mk(new THREE.BoxGeometry(0.03, 0.045, 0.04), skin, neck, 0, 0.11, 0.125, 'head', false);
     for (const x of [-1, 1]) mk(new THREE.BoxGeometry(0.04, 0.012, 0.01), s(0x3a2a20), neck, x * 0.04, 0.16, 0.115, 'head', false);
+    if (o.hair) mk(new THREE.SphereGeometry(0.123, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.42), s(o.hair, 1), neck, 0, 0.14, 0.0, 'head', false);
     if (o.beard) mk(new THREE.SphereGeometry(0.1, 12, 8, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45), s(o.beard, 1), neck, 0, 0.13, 0.025, 'head', false);
     mk(new THREE.SphereGeometry(0.16, 8, 6), HIT_MAT, neck, 0, 0.13, 0, 'head');
     const arm = (side) => {
-      const sh = grp(spine, side * 0.25, 0.47, 0);
-      mk(new THREE.CapsuleGeometry(0.06, 0.18, 4, 8), top, sh, 0, -0.13, 0, 'limb');
+      const sh = grp(spine, side * (0.25 + (b - 1) * 0.15), 0.47, 0);
+      mk(new THREE.CapsuleGeometry(0.06 * b, 0.18, 4, 8), sleeves, sh, 0, -0.13, 0, 'limb');
       const el = grp(sh, 0, -0.27, 0);
-      mk(new THREE.CapsuleGeometry(0.052, 0.16, 4, 8), top, el, 0, -0.12, 0, 'limb');
+      mk(new THREE.CapsuleGeometry(0.052 * (1 + (b - 1) * 0.7), 0.16, 4, 8), sleeves, el, 0, -0.12, 0, 'limb');
       mk(new THREE.SphereGeometry(0.048, 8, 6), skin, el, 0, -0.26, 0, 'limb', false);
       return { sh, el };
     };
@@ -75,10 +103,25 @@ export class Person {
       const kn = grp(hp, 0, -0.44, 0);
       mk(new THREE.CapsuleGeometry(0.066, 0.3, 4, 8), legs, kn, 0, -0.21, 0, 'limb');
       mk(new THREE.BoxGeometry(0.12, 0.09, 0.27), shoes, kn, 0, -0.43, 0.05, 'limb', false);
+      if (o.backText) mk(new THREE.CylinderGeometry(0.07, 0.07, 0.04, 10), s(0xd8dde2, 0.2, 0.8), kn, 0, -0.25, 0, 'limb', false);
       return { hp, kn };
     };
     const LL = leg(1), RL = leg(-1);
     this.hipL = LL.hp; this.knL = LL.kn; this.hipR = RL.hp; this.knR = RL.kn;
+    if (o.paper) {
+      this.paper = new THREE.Mesh(new THREE.PlaneGeometry(0.21, 0.3), new THREE.MeshStandardMaterial({ color: 0xfafafa, roughness: 0.6, side: THREE.DoubleSide, emissive: 0x333333 }));
+      this.paper.position.set(0, -0.36, 0.02); this.paper.raycast = () => {}; this.paper.visible = false;
+      this.elR.add(this.paper);
+    }
+    if (o.lance) {
+      const lance = this.lance = new THREE.Group();
+      lance.position.set(-0.05, 0.22, 0.32); lance.rotation.x = 0.55;
+      const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.95, 6), s(0x2a2a2a, 0.4, 0.6));
+      rod.rotation.x = Math.PI / 2; rod.position.z = 0.35; rod.raycast = () => {}; lance.add(rod);
+      const gunB = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 0.18), s(0xe8c020, 0.5)); gunB.position.set(0, -0.05, -0.1); gunB.raycast = () => {}; lance.add(gunB);
+      this.lanceTip = new THREE.Object3D(); this.lanceTip.position.z = 0.83; lance.add(this.lanceTip);
+      this.spine.add(lance);
+    }
     this.tag = nameTag(o.name); this.tag.position.set(0, 2.35, 0); root.add(this.tag);
     root.scale.setScalar(o.scale || 0.85);
     this.cur = { ...POSES.stand }; this.target = POSES.stand;
@@ -149,10 +192,12 @@ export class Person {
     let swing = 0;
     if (this.speed > 0.1) { this.phase += dt * this.speed * 3.2; swing = Math.sin(this.phase) * 0.55; }
     const shake = this.poseName === 'shout' ? Math.sin(this.t * 22) * 0.25 : 0;
+    const waveZ = this.poseName === 'wave' ? Math.sin(this.t * 9) * 0.35 : 0;
+    this.spine.rotation.y = this.poseName === 'wash' ? Math.sin(this.t * 1.6) * 0.4 : 0;
     const gest = this.poseName === 'chat' ? Math.sin(this.t * 3) * 0.35 : 0;
     this.hips.position.y = c.hipsY + (this.speed > 0.1 ? Math.abs(Math.cos(this.phase)) * 0.035 : 0);
     this.spine.rotation.x = c.spineX;
-    this.shR.rotation.set(c.shRx - swing * 0.6 + shake + gest, 0, c.shRz);
+    this.shR.rotation.set(c.shRx - swing * 0.6 + shake + gest, 0, c.shRz + waveZ);
     this.shL.rotation.set(c.shLx + swing * 0.6, 0, c.shLz);
     this.elR.rotation.x = c.elR + shake * 0.6; this.elL.rotation.x = c.elL;
     this.hipL.rotation.x = swing - (this.poseName === 'cower' ? 1.2 : 0);
@@ -186,11 +231,14 @@ function path(from, to) {
 }
 
 // ------------------------------------------------------------------ the cast
+const KERB = -4.1;
+const SWERVE = 0.5;
+
 export class Civilians {
-  constructor({ scene, world, carSys, audio, enemies }) {
-    this.scene = scene; this.carSys = carSys; this.audio = audio; this.enemies = enemies;
+  constructor({ scene, world, carSys, audio, enemies, fx }) {
+    this.scene = scene; this.carSys = carSys; this.audio = audio; this.enemies = enemies; this.fx = fx;
     this.group = new THREE.Group(); scene.add(this.group);
-    this.onSay = null;        // (who, text, ms)
+    this.onSay = null;
     this.onKilledInBlast = null;
 
     // automatic sliding showroom door
@@ -207,27 +255,63 @@ export class Civilians {
 
     this.craig = new Person(this.group, { id: 'craig', name: 'CRAIG', top: 0x1d2a48, legs: 0x2b2d33, shoes: 0x111111, shirtFront: 0xf4f4f4, tie: 0x7a1020, scale: 0.84, skin: 0xe2ad8f });
     this.kev = new Person(this.group, { id: 'kev', name: 'KEV JONES', top: 0x5b6068, legs: 0x2f4a78, shoes: 0xf2f2f2, hood: true, scale: 0.86, skin: 0xd9a080, beard: 0x5a4a3a });
+    this.mech = new Person(this.group, { id: 'mech', name: 'MERTON GARAGES', top: 0x1d3466, legs: 0x1d3466, shoes: 0x161616, scale: 0.95, skin: 0xd8a184, hair: 0x4a3524, backText: ['MERTON', 'GARAGES'], paper: true });
+    this.val = new Person(this.group, { id: 'val', name: 'VALETER', top: 0x101010, legs: 0x3c3f44, shoes: 0x1a1a1a, sleeves: 'skin', bulk: 1.55, scale: 1.02, skin: 0xb97a55, hair: 0x1b1410, lance: true });
+    for (const p of [this.craig, this.kev, this.mech]) p.upgrades = true;
+
+    // the valeter's white Corsa outside the open shutter
+    this.corsa = makeCar('hatch', 0xf3f4f5, { plain: true });
+    this.corsa.position.set(-27.0, 0.14, -27.75); this.corsa.rotation.y = 0;
+    carSys.addStatic(this.corsa);
+    this.valSpots = [
+      { x: -23.9, z: -27.5 }, { x: -26.2, z: -26.3 }, { x: -28.4, z: -26.35 }, { x: -30.0, z: -27.6 },
+    ];
+    this.motSpots = [4, 24];
     this.reset();
   }
 
-  get people() { return [this.craig, this.kev]; }
+  get people() { return [this.craig, this.kev, this.mech, this.val]; }
 
   reset() {
     this.craigState = 'inside'; this.craigT = 14 + Math.random() * 10; this.craigShouted = false;
-    this.craig.revive(-8.8, 0.2, -33.6); this.craig.indoor = true; this.craig.root.rotation.y = Math.PI * 0.85;
-    this.removeKev();
-    this.kevT = 22 + Math.random() * 10;
+    this.craig.revive(-8.8, 0.2, -33.6); this.craig.root.rotation.y = Math.PI * 0.85;
+    this.removeKev(); this.removeMech();
+    this.motCars = [];
+    this.kerbCars = new Set();
+    this.nextEvent = 'kev'; this.eventT = 20 + Math.random() * 8;
+    this.val.revive(this.valSpots[1].x, 0.13, this.valSpots[1].z);
+    this.valState = 'wash'; this.valT = 6; this.valSpot = 1;
   }
 
   removeKev() {
-    if (this.bmw) { this.carSys.removeDynamic(this.bmw); this.bmw = null; }
+    if (this.bmw) { this.kerbCars && this.kerbCars.delete(this.bmw); this.carSys.removeDynamic(this.bmw); this.bmw = null; }
     this.kevState = 'away';
     this.kev.root.removeFromParent();
   }
 
+  removeMech() {
+    if (this.x6) { this.kerbCars && this.kerbCars.delete(this.x6); this.carSys.removeDynamic(this.x6); this.x6 = null; }
+    this.mechState = 'away';
+    this.mech.root.removeFromParent();
+    if (this.mech.paper) this.mech.paper.visible = false;
+  }
+
+  get eventRunning() { return this.kevState !== 'away' || this.mechState !== 'away'; }
+
+  eventDone(which) {
+    this.nextEvent = which === 'kev' ? 'mech' : 'kev';
+    this.eventT = 22 + Math.random() * 18;
+  }
+
   onWaveStart() {
     if (!this.craig.alive) { this.craig.revive(-8.8, 0.2, -33.6); this.craigState = 'inside'; this.craigT = 10 + Math.random() * 8; }
-    if (this.kevState === 'away' || !this.kev.alive) { this.removeKev(); this.kevT = 12 + Math.random() * 20; }
+    if (!this.val.alive) { const sp = this.valSpots[1]; this.val.revive(sp.x, 0.13, sp.z); this.valState = 'wash'; this.valT = 5; this.valSpot = 1; }
+    if (this.kevState !== 'away' && (!this.kev.alive || this.kevState === 'dead')) { this.removeKev(); this.eventDone('kev'); }
+    if (this.mechState !== 'away' && (!this.mech.alive || this.mechState === 'dead')) {
+      // if he died mid-MOT, leave the car where it ended up
+      if (this.motCar) { this.motCar.userData.driven = false; this.motCar = null; }
+      this.removeMech(); this.eventDone('mech');
+    }
   }
 
   say(who, text, ms = 2600) { if (this.onSay) this.onSay(who, text, ms); }
@@ -236,19 +320,101 @@ export class Civilians {
   update(dt, active) {
     this.updateDoor(dt);
     this.updateCraig(dt, active);
-    this.updateKev(dt, active);
+    if (!this.eventRunning && active) {
+      this.eventT -= dt;
+      if (this.eventT <= 0) { if (this.nextEvent === 'kev') this.spawnBmw(); else this.spawnX6(); }
+    }
+    this.updateKev(dt);
+    this.updateMech(dt);
+    this.updateValeter(dt);
+    for (const c of this.kerbCars) {
+      if (c.userData.destroyed || c.userData.flying) continue;
+      c.position.z += (KERB - c.position.z) * Math.min(1, dt * 2);
+      c.rotation.y += (0 - c.rotation.y) * Math.min(1, dt * 2);
+    }
     for (const p of this.people) if (p.root.parent) p.update(dt);
   }
 
   updateDoor(dt) {
     let near = false;
     const check = (p) => { if (Math.hypot(p.x - DOOR.x, p.z - DOOR.z) < 2.8) near = true; };
-    for (const p of this.people) if (p.root.parent) check(p.root.position);
+    for (const p of this.people) if (p.root.parent && p.alive) check(p.root.position);
     for (const s of this.enemies.soldiers) if (s.alive) check(s.root.position);
     this.doorOpen += ((near ? 1 : 0) - this.doorOpen) * Math.min(1, dt * 5);
     for (const d of this.doors) d.position.x = d.userData.closedX + d.userData.side * 0.76 * this.doorOpen;
   }
 
+  // ---------------- vehicles ----------------
+  kerbObstacles(except) {
+    const xs = [];
+    for (const c of this.kerbCars) if (c !== except && c.parent && !c.userData.flying) xs.push(c.position.x);
+    return xs;
+  }
+
+  // drive along the far kerb (+x), pulling out round anything parked. Returns true on arrival at stopX.
+  drive(car, st, dt) {
+    const p = car.position;
+    let step, d = 0;
+    if (st.stopX !== null && st.stopX !== undefined) {
+      d = st.stopX - p.x;
+      const v = Math.min(13, Math.sqrt(Math.max(0, 2 * 4.5 * d)) + 0.4);
+      step = Math.min(d, v * dt);
+    } else {
+      st.v = Math.min(15, (st.v || 3) + dt * 4);
+      step = st.v * dt;
+    }
+    p.x += step;
+    const obs = this.kerbObstacles(car);
+    const parking = st.stopX != null && d < 4;
+    const swerve = !parking && obs.some((ox) => (ox - p.x) < 9 && (ox - p.x) > -5.5);
+    const tz = swerve ? SWERVE : KERB;
+    const dz = (tz - p.z) * Math.min(1, dt * (parking ? 2.5 : 1.6));
+    p.z += dz;
+    p.y = 0;
+    const want = Math.atan2(-dz, Math.max(0.02, step));
+    car.rotation.y += (want - car.rotation.y) * Math.min(1, dt * 6);
+    if (st.stopX != null && d < 0.05) { car.rotation.y = 0; return true; }
+    return false;
+  }
+
+  // steer a car along waypoints (used for pulling a car off the forecourt)
+  steer(car, st, dt) {
+    const wp = st.wps[0];
+    if (!wp) return true;
+    const p = car.position;
+    const dx = wp.x - p.x, dz = wp.z - p.z, dist = Math.hypot(dx, dz);
+    if (dist < 1.1) { st.wps.shift(); return !st.wps.length; }
+    const want = Math.atan2(-dz, dx);
+    let diff = want - car.rotation.y;
+    while (diff > Math.PI) diff -= Math.PI * 2; while (diff < -Math.PI) diff += Math.PI * 2;
+    car.rotation.y += THREE.MathUtils.clamp(diff, -2.2 * dt, 2.2 * dt);
+    const sp = Math.abs(diff) > 0.8 ? 1.8 : 3.6;
+    p.x += Math.cos(car.rotation.y) * sp * dt;
+    p.z += -Math.sin(car.rotation.y) * sp * dt;
+    p.y += ((p.z > -5.05 ? 0 : 0.14) - p.y) * Math.min(1, dt * 6);
+    car.rotation.x *= 0.9; car.rotation.z *= 0.9;
+    return false;
+  }
+
+  // someone sat inside a car that just got blown up
+  checkCarBlast(person, car, state) {
+    if (car && car.userData.destroyed && person.alive && !person.root.parent) {
+      person.revive(car.position.x, 0, car.position.z); this.group.add(person.root); person.tag.visible = false;
+      person.die(new V3(0, 0, 1), false);
+      if (this.onKilledInBlast) this.onKilledInBlast(person);
+      return 'dead';
+    }
+    return state;
+  }
+
+  follow(p, dt, speed) {
+    const wp = p.path && p.path[0];
+    if (!wp) return true;
+    if (p.walkTo(wp.x, wp.z, dt, speed)) p.path.shift();
+    return !p.path.length;
+  }
+
+  // ---------------- Craig ----------------
   updateCraig(dt, active) {
     const c = this.craig;
     if (!c.alive) return;
@@ -277,8 +443,7 @@ export class Civilians {
         }
         this.craigT -= dt;
         if (this.craigT <= 0) {
-          if (this.kevState === 'meeting') { this.craigState = 'chat'; this.craigT = 7; }
-          else this.craigState = 'back';
+          if (this.kevState === 'meeting') { this.craigState = 'chat'; this.craigT = 7; } else this.craigState = 'back';
         }
         break;
       }
@@ -304,25 +469,27 @@ export class Civilians {
     return best;
   }
 
-  updateKev(dt, active) {
-    const k = this.kev;
-    const park = 11, lane = -4.1;
+  // ---------------- Kev Jones ----------------
+  spawnBmw() {
+    const b = this.bmw = makeCar('saloon', 0xa9cbe8, { plain: true, kidney: true });
+    b.position.set(-160, 0, KERB); b.rotation.y = 0;
+    this.carSys.addDynamic(b);
+    this.bmwDrive = { stopX: 11 };
+    this.kevState = 'driving'; this.kevSaid = false;
+    this.say('HQ', 'Civvy vehicle inbound — pale blue 3 Series. That\'ll be Kev Jones, the trader.', 3200);
+  }
+
+  updateKev(dt) {
+    const k = this.kev, park = 11;
     switch (this.kevState) {
-      case 'away':
-        if (active) this.kevT -= dt;
-        if (this.kevT <= 0) this.spawnBmw();
-        break;
       case 'driving': {
-        const b = this.bmw;
-        if (b.userData.destroyed) break;
-        const d = park - b.position.x;
-        const v = Math.min(13, Math.sqrt(Math.max(0, 2 * 4.5 * d)) + 0.4);
-        b.position.x += Math.min(d, v * dt);
-        if (d < 0.05) {
+        if (this.bmw.userData.destroyed) break;
+        if (this.drive(this.bmw, this.bmwDrive, dt)) {
+          this.kerbCars.add(this.bmw);
           this.kevState = 'walkIn';
-          k.revive(park + 0.4, 0, lane + 1.25); k.indoor = false;
+          k.revive(park + 0.4, 0, KERB + 1.25);
           this.group.add(k.root);
-          k.path = [new V3(park - 2.9, 0, lane + 1.25), new V3(park - 2.9, 0, LAYOUT.lanes.pave), ...path(new V3(park - 2.9, 0, LAYOUT.lanes.pave), new V3(-4.5, 0, -27.8))];
+          k.path = [new V3(park - 2.9, 0, KERB + 1.25), new V3(park - 2.9, 0, LAYOUT.lanes.pave), ...path(new V3(park - 2.9, 0, LAYOUT.lanes.pave), new V3(-4.5, 0, -27.8))];
           this.say('KEV JONES', 'Alright Craig! What\'s the best you can do on the stock, mate?', 3200);
         }
         break;
@@ -342,47 +509,184 @@ export class Civilians {
         if (this.kevT < 5 && !this.kevSaid) { this.kevSaid = true; this.say('KEV JONES', 'Go on then, I\'ll have three of them. Cash.', 2600); }
         if (this.kevT <= 0) {
           this.kevState = 'walkOut';
-          k.path = [...path(k.root.position, new V3(park - 2.9, 0, LAYOUT.lanes.pave)), new V3(park - 2.9, 0, lane + 1.25), new V3(park + 0.4, 0, lane + 1.25)];
+          k.path = [...path(k.root.position, new V3(park - 2.9, 0, LAYOUT.lanes.pave)), new V3(park - 2.9, 0, KERB + 1.25), new V3(park + 0.4, 0, KERB + 1.25)];
         }
         break;
       case 'walkOut':
         if (!k.alive) break;
-        if (this.follow(k, dt, 1.7)) { k.root.removeFromParent(); this.kevState = 'leaving'; }
+        if (this.follow(k, dt, 1.7)) { k.root.removeFromParent(); this.kevState = 'leaving'; this.kerbCars.delete(this.bmw); this.bmwDrive = { stopX: null, v: 2 }; }
         break;
-      case 'leaving': {
-        const b = this.bmw;
-        if (b.userData.destroyed) break;
-        this.bmwSpeed = Math.min(15, (this.bmwSpeed || 0) + dt * 4);
-        b.position.x += this.bmwSpeed * dt;
-        if (b.position.x > 170) { this.removeKev(); this.kevT = 60 + Math.random() * 40; }
+      case 'leaving':
+        if (this.bmw.userData.destroyed) break;
+        this.drive(this.bmw, this.bmwDrive, dt);
+        if (this.bmw.position.x > 170) { this.removeKev(); this.eventDone('kev'); }
         break;
-      }
       default: break;
     }
-    // Kev inside a car that gets blown up
-    if (this.bmw && this.bmw.userData.destroyed && k.alive && (this.kevState === 'driving' || this.kevState === 'leaving')) {
-      k.revive(this.bmw.position.x, 0, this.bmw.position.z); this.group.add(k.root); k.tag.visible = false;
-      k.die(new V3(0, 0, 1), false);
-      if (this.onKilledInBlast) this.onKilledInBlast(k);
-      this.kevState = 'dead';
+    if (this.kevState === 'driving' || this.kevState === 'leaving') this.kevState = this.checkCarBlast(k, this.bmw, this.kevState);
+  }
+
+  // ---------------- the Merton Garages mechanic ----------------
+  spawnX6() {
+    const x = this.x6 = makeCar('x6', 0x0b0c0e, { plain: true, kidney: true });
+    x.position.set(-160, 0, KERB); x.rotation.y = 0;
+    this.carSys.addDynamic(x);
+    this.x6Drive = { stopX: -11 };
+    this.mechState = 'arriving';
+    this.say('HQ', 'Black X6 pulling up. Overalls — looks like the mechanic from Merton Garages.', 3200);
+  }
+
+  pickMotCar() {
+    const cands = this.carSys.cars.filter((c) => c.row === 0 && !c.car.userData.destroyed && !c.car.userData.driven && c.x > -9 && c.x < 7);
+    cands.sort((a, b) => Math.abs(a.x + 1) - Math.abs(b.x + 1));
+    return cands[0] ? cands[0].car : null;
+  }
+
+  updateMech(dt) {
+    const m = this.mech, PARK = -11, pave = LAYOUT.lanes.pave;
+    const inDoor = new V3(DOOR.x, 0, -30.6), inside = new V3(-7.6, 0, -32.2), outDoor = new V3(DOOR.x, 0, -27.8);
+    switch (this.mechState) {
+      case 'arriving':
+        if (this.x6.userData.destroyed) break;
+        if (this.drive(this.x6, this.x6Drive, dt)) {
+          this.kerbCars.add(this.x6);
+          m.revive(PARK + 0.3, 0, KERB + 1.3); this.group.add(m.root);
+          m.path = [new V3(PARK - 3.2, 0, KERB + 1.3), new V3(PARK - 3.2, 0, pave), ...path(new V3(PARK - 3.2, 0, pave), outDoor), inDoor, inside];
+          this.mechState = 'toShowroom';
+        }
+        break;
+      case 'toShowroom':
+        if (!m.alive) break;
+        if (this.follow(m, dt, 1.7)) { this.mechState = 'inside1'; this.mechT = 4; m.setPose('stand'); m.speed = 0; }
+        break;
+      case 'inside1':
+        if (!m.alive) break;
+        this.mechT -= dt;
+        if (this.mechT <= 0) {
+          this.motCar = this.pickMotCar();
+          this.motX = this.motSpots.find((x) => ![...this.kerbCars].some((c) => Math.abs(c.position.x - x) < 5));
+          if (this.motCar && this.motX !== undefined) {
+            const c = this.motCar;
+            m.path = [inDoor, outDoor, ...path(outDoor, new V3(c.position.x, 0, LAYOUT.lanes.a1)), new V3(c.position.x - 0.6, 0, -14.4)];
+            this.mechState = 'toCar';
+          } else {
+            // nothing to drive: just do the paperwork at the door
+            this.motCar = null;
+            m.path = [inDoor, outDoor];
+            this.mechState = 'toCar';
+          }
+        }
+        break;
+      case 'toCar':
+        if (!m.alive) break;
+        if (this.follow(m, dt, 1.7)) {
+          if (this.motCar) {
+            m.root.removeFromParent();
+            const c = this.motCar;
+            c.userData.driven = true;
+            c.rotation.x = 0; c.rotation.z = 0;
+            this.motDrive = { wps: [new V3(c.position.x + Math.cos(c.rotation.y) * 2.5, 0, c.position.z - Math.sin(c.rotation.y) * 2.5), new V3(-1, 0, -10.6), new V3(-1, 0, -6.6), new V3(this.motX - 5, 0, KERB + 0.3)], phase: 'steer' };
+            this.mechState = 'drivingMot';
+          } else { this.startMotWave(m.root.position.clone()); }
+        }
+        break;
+      case 'drivingMot': {
+        const c = this.motCar;
+        if (c.userData.destroyed) { this.mechState = this.checkCarBlast(m, c, this.mechState); break; }
+        if (this.motDrive.phase === 'steer') {
+          if (this.steer(c, this.motDrive, dt)) { this.motDrive = { phase: 'kerb', stopX: this.motX }; }
+        } else if (this.drive(c, this.motDrive, dt)) {
+          this.kerbCars.add(c);
+          this.motCars.push(c);
+          m.revive(c.position.x + 0.3, 0, KERB + 1.3); this.group.add(m.root);
+          m.root.rotation.y = 0;
+          this.startMotWave();
+        }
+        break;
+      }
+      case 'motWave':
+        if (!m.alive) break;
+        m.speed = 0; m.setPose('wave');
+        m.faceTowards(0, 10, dt, 5);
+        this.mechT -= dt;
+        if (!this.mechSaid && this.mechT < 3.1) {
+          this.mechSaid = true;
+          this.audio.say('mot', m.root.position);
+          this.say('MECHANIC (MERTON GARAGES)', 'M-O-T DONE!', 2600);
+        }
+        if (this.mechT <= 0) {
+          m.paper.visible = false;
+          const here = m.root.position.clone();
+          const start = here.z > -9 ? [new V3(here.x + 3.2, 0, here.z), new V3(here.x + 3.2, 0, pave)] : [];
+          const from = start.length ? start[start.length - 1] : here;
+          m.path = [...start, ...(here.z > -9 ? path(from, outDoor) : []), outDoor, inDoor, inside];
+          this.mechState = 'toShowroom2';
+        }
+        break;
+      case 'toShowroom2':
+        if (!m.alive) break;
+        if (this.follow(m, dt, 1.7)) { this.mechState = 'inside2'; this.mechT = 3; m.speed = 0; m.setPose('stand'); }
+        break;
+      case 'inside2':
+        if (!m.alive) break;
+        this.mechT -= dt;
+        if (this.mechT <= 0) {
+          m.path = [inDoor, outDoor, ...path(outDoor, new V3(PARK - 3.2, 0, pave)), new V3(PARK - 3.2, 0, KERB + 1.3), new V3(PARK + 0.3, 0, KERB + 1.3)];
+          this.mechState = 'toX6';
+        }
+        break;
+      case 'toX6':
+        if (!m.alive) break;
+        if (this.x6.userData.destroyed) { m.setPose('cower'); m.speed = 0; break; }
+        if (this.follow(m, dt, 1.8)) {
+          m.root.removeFromParent();
+          this.kerbCars.delete(this.x6);
+          this.x6Drive = { stopX: null, v: 2 };
+          this.mechState = 'leaving';
+        }
+        break;
+      case 'leaving':
+        if (this.x6.userData.destroyed) break;
+        this.drive(this.x6, this.x6Drive, dt);
+        if (this.x6.position.x > 170) { this.removeMech(); this.eventDone('mech'); }
+        break;
+      default: break;
     }
+    if (this.mechState === 'arriving' || this.mechState === 'leaving') this.mechState = this.checkCarBlast(m, this.x6, this.mechState);
   }
 
-  follow(p, dt, speed) {
-    const wp = p.path && p.path[0];
-    if (!wp) return true;
-    if (p.walkTo(wp.x, wp.z, dt, speed)) p.path.shift();
-    return !p.path.length;
+  startMotWave() {
+    this.mechState = 'motWave'; this.mechT = 3.6; this.mechSaid = false;
+    if (this.mech.paper) this.mech.paper.visible = true;
   }
 
-  spawnBmw() {
-    const b = this.bmw = makeCar('saloon', 0xa9cbe8, { plain: true, kidney: true });
-    b.position.set(-160, 0, -4.1); b.rotation.y = 0;
-    this.carSys.addDynamic(b);
-    b.userData.kevsCar = true;
-    this.bmwSpeed = 0;
-    this.kevState = 'driving'; this.kevSaid = false;
-    this.say('HQ', 'Civvy vehicle inbound — pale blue 3 Series. That\'ll be Kev Jones, the trader.', 3200);
+  // ---------------- the valeter ----------------
+  updateValeter(dt) {
+    const v = this.val;
+    if (!this.washSound && this.audio.ctx) this.washSound = this.audio.washLoop();
+    const corsaOk = !this.corsa.userData.destroyed;
+    const washing = v.alive && corsaOk && this.valState === 'wash';
+    if (this.washSound) this.washSound.set(v.root.position, washing);
+    if (!v.alive) return;
+    if (!corsaOk) { v.speed = 0; v.setPose('cower'); return; }
+    const sp = this.valSpots[this.valSpot];
+    const cp = this.corsa.position;
+    if (this.valState === 'wash') {
+      v.speed = 0; v.setPose('wash');
+      v.faceTowards(cp.x, cp.z, dt, 4);
+      this.valT -= dt;
+      // spray
+      if (v.lanceTip && this.fx) {
+        const tip = v.lanceTip.getWorldPosition(new V3());
+        const dir = new V3(0, 0, 1).applyQuaternion(v.lanceTip.getWorldQuaternion(new THREE.Quaternion()));
+        for (let i = 0; i < 2; i++) {
+          this.fx.spawn(this.fx.norm, { pos: tip, vel: dir.clone().multiplyScalar(7 + Math.random() * 3).add(new V3((Math.random() - 0.5) * 0.8, (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.8)), size0: 0.04, size1: 0.45, life: 0.35 + Math.random() * 0.2, alpha: 0.55, color: 0xe8f4ff, drag: 2.5, grav: 3 });
+        }
+      }
+      if (this.valT <= 0) { this.valState = 'move'; this.valSpot = (this.valSpot + 1 + Math.floor(Math.random() * 2)) % this.valSpots.length; }
+    } else {
+      if (v.walkTo(sp.x, sp.z, dt, 1.2)) { this.valState = 'wash'; this.valT = 6 + Math.random() * 4; }
+    }
   }
 
   // anyone caught in a blast

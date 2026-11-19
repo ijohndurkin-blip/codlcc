@@ -5,7 +5,12 @@ const BASE_FOV = 72;
 export const WEAPONS = {
   l115: { name: 'L115 .338 BOLT-ACTION', mag: 5, cycle: 1.05, reload: 2.4, maxZoom: 12, recoil: 0.035, hipRecoil: 0.09, bolt: true, power: 1, pierce: 0, heavy: false },
   fifty: { name: '.50 CAL ANTI-MATERIEL', mag: 8, cycle: 0.3, reload: 2.8, maxZoom: 16, recoil: 0.06, hipRecoil: 0.14, bolt: false, power: 3, pierce: 3, heavy: true },
+  he: { name: '.50 CAL HE-I · EXPLOSIVE ROUNDS', mag: 10, cycle: 0.3, reload: 2.8, maxZoom: 16, recoil: 0.065, hipRecoil: 0.15, bolt: false, power: 3, pierce: 0, heavy: true, explosive: 3.8 },
+  rail: { name: 'XR-9 RAILGUN', mag: 6, cycle: 0.5, reload: 2.4, maxZoom: 20, recoil: 0.05, hipRecoil: 0.12, bolt: false, power: 3, pierce: 99, pierceWorld: true, rail: true },
+  gold: { name: "GOLDEN RAILGUN 'GET YERSEL AWAY'", mag: 12, cycle: 0.28, reload: 2.0, maxZoom: 24, recoil: 0.05, hipRecoil: 0.12, bolt: false, power: 3, pierce: 99, pierceWorld: true, rail: true, explosive: 4.5 },
 };
+export const ORDER = ['l115', 'fifty', 'he', 'rail', 'gold'];
+const FULL_AMMO = () => Object.fromEntries(ORDER.map((k) => [k, WEAPONS[k].mag]));
 
 export class Player {
   constructor({ camera, vmScene, vmCamera, audio, T, canvas }) {
@@ -16,7 +21,7 @@ export class Player {
     this.ads = 0; this.adsHeld = false;
     this.zoom = 6;
     this.breath = 1; this.holdingBreath = false; this.breathLock = 0;
-    this.weapon = 'l115'; this.unlocked = { l115: true }; this.ammoBy = { l115: 5, fifty: 8 }; this.switchT = 0;
+    this.weapon = 'l115'; this.unlocked = { l115: true }; this.ammoBy = FULL_AMMO(); this.switchT = 0;
     this.ammo = 5; this.reloadT = 0; this.boltT = 0;
     this.health = 100; this.sinceHurt = 99;
     this.keys = {};
@@ -130,7 +135,7 @@ export class Player {
     fadd(new THREE.BoxGeometry(0.06, 0.04, 0.2), gun, 0, 0.05, 0.38);
     fadd(new THREE.BoxGeometry(0.066, 0.17, 0.035), black, 0, -0.04, 0.56);
     fadd(new THREE.BoxGeometry(0.04, 0.12, 0.055), gun, 0, -0.09, 0.13, 0.35);
-    const fmag = fadd(new THREE.BoxGeometry(0.06, 0.13, 0.13), gun, 0, -0.1, -0.07);
+    const fmag = fadd(new THREE.BoxGeometry(0.06, 0.13, 0.13), gun, 0, -0.1, -0.07); fmag.name = 'mag';
     fadd(cyl(0.022, 0.36), black, 0, 0.075, -0.02);
     fadd(new THREE.CylinderGeometry(0.04, 0.023, 0.08, 24).rotateX(Math.PI / 2), black, 0, 0.075, -0.24);
     fadd(cyl(0.04, 0.07), black, 0, 0.075, -0.3);
@@ -140,7 +145,7 @@ export class Player {
     fadd(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), black, 0.03, 0.075, -0.02, 0, 0, Math.PI / 2);
     for (const z of [-0.12, 0.08]) fadd(new THREE.BoxGeometry(0.04, 0.05, 0.025), black, 0, 0.045, z);
     for (const sx of [-1, 1]) fadd(new THREE.BoxGeometry(0.014, 0.014, 0.3), black, sx * 0.025, -0.06, -0.6);
-    const fbolt = new THREE.Group(); fbolt.position.set(0.04, 0.02, 0.05); fifty.add(fbolt);
+    const fbolt = new THREE.Group(); fbolt.position.set(0.04, 0.02, 0.05); fbolt.name = 'bolt'; fifty.add(fbolt);
     add(new THREE.BoxGeometry(0.03, 0.02, 0.03), steel, 0.015, 0, 0, 0, 0, 0, fbolt);
     for (const h of handParts) fifty.add(h.clone());
     const fMuzzle = new THREE.Object3D(); fMuzzle.position.set(0, 0.012, -1.42); fifty.add(fMuzzle);
@@ -149,8 +154,62 @@ export class Player {
     fifty.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     fifty.visible = false;
     this.vmCamera.add(fifty);
+    fMuzzle.name = 'muzzle'; fFlash.name = 'flash'; fLight.name = 'light';
     this.models.fifty = { group: fifty, muzzle: fMuzzle, bolt: fbolt, mag: fmag, flash: fFlash, light: fLight, magY: -0.1 };
     this.models.l115.magY = -0.065;
+
+    const register = (name, group, magY, recolor, flashColor) => {
+      group.traverse((o) => {
+        if (o.isMesh && recolor && recolor.has(o.material)) o.material = recolor.get(o.material);
+        if (o.isSprite) { o.material = o.material.clone(); if (flashColor) o.material.color.set(flashColor); }
+        if (o.isPointLight && flashColor) o.color.set(flashColor);
+        if (o.isMesh) o.frustumCulled = false;
+      });
+      group.visible = false;
+      this.vmCamera.add(group);
+      const by = (n) => group.getObjectByName(n);
+      this.models[name] = { group, muzzle: by('muzzle'), bolt: by('bolt'), mag: by('mag'), flash: by('flash'), light: by('light'), magY };
+    };
+    // .50 cal HE: same rifle, coyote furniture + red-tipped mag
+    const heMat = s({ color: 0x8a6a3e, roughness: 0.6 });
+    const he = fifty.clone(true);
+    register('he', he, -0.1, new Map([[od, heMat]]));
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.02, 0.132), s({ color: 0xc81e1e, roughness: 0.5 }));
+    tip.position.set(0, 0.06, 0); he.getObjectByName('mag').add(tip);
+
+    // XR-9 railgun
+    const rail = new THREE.Group();
+    const white = s({ color: 0xd9dde2, roughness: 0.3, metalness: 0.4 });
+    const glow = s({ color: 0x66ccff, emissive: 0x33aaff, emissiveIntensity: 3 });
+    const radd = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => add(geo, mat, x, y, z, rx, ry, rz, rail);
+    radd(new THREE.BoxGeometry(0.085, 0.11, 0.6), white, 0, -0.005, -0.05);
+    for (const sx of [-1, 1]) radd(new THREE.BoxGeometry(0.018, 0.05, 0.95), gun, sx * 0.026, 0.005, -0.78);
+    radd(cyl(0.006, 0.95), glow, 0, 0.005, -0.78);
+    for (let i = 0; i < 6; i++) radd(new THREE.TorusGeometry(0.046, 0.008, 8, 20), glow, 0, 0.005, -0.42 - i * 0.13);
+    radd(new THREE.BoxGeometry(0.075, 0.075, 0.06), gun, 0, 0.005, -1.27);
+    radd(new THREE.BoxGeometry(0.06, 0.14, 0.3), white, 0, -0.035, 0.4);
+    radd(new THREE.BoxGeometry(0.066, 0.16, 0.035), gun, 0, -0.04, 0.565);
+    radd(new THREE.BoxGeometry(0.004, 0.02, 0.5), glow, 0.044, 0.02, -0.05);
+    radd(new THREE.BoxGeometry(0.04, 0.12, 0.055), gun, 0, -0.09, 0.13, 0.35);
+    const rmag = radd(new THREE.BoxGeometry(0.06, 0.1, 0.12), gun, 0, -0.095, -0.07); rmag.name = 'mag';
+    radd(new THREE.BoxGeometry(0.004, 0.06, 0.1), glow, 0.031, -0.095, -0.07);
+    radd(cyl(0.022, 0.36), gun, 0, 0.075, -0.02);
+    radd(new THREE.CylinderGeometry(0.04, 0.023, 0.08, 24).rotateX(Math.PI / 2), gun, 0, 0.075, -0.24);
+    radd(cyl(0.04, 0.07), gun, 0, 0.075, -0.3);
+    radd(cyl(0.03, 0.07), gun, 0, 0.075, 0.18);
+    radd(new THREE.CircleGeometry(0.035, 24), lens, 0, 0.075, -0.3355, 0, Math.PI);
+    radd(new THREE.TorusGeometry(0.041, 0.004, 6, 24), glow, 0, 0.075, -0.3);
+    for (const z of [-0.12, 0.08]) radd(new THREE.BoxGeometry(0.04, 0.05, 0.025), gun, 0, 0.045, z);
+    const rbolt = new THREE.Group(); rbolt.name = 'bolt'; rail.add(rbolt);
+    for (const h of handParts) rail.add(h.clone());
+    const rMuzzle = new THREE.Object3D(); rMuzzle.name = 'muzzle'; rMuzzle.position.set(0, 0.005, -1.32); rail.add(rMuzzle);
+    const rFlash = this.vmFlash.clone(); rFlash.name = 'flash'; rFlash.position.copy(rMuzzle.position); rail.add(rFlash);
+    const rLight = new THREE.PointLight(0x66ccff, 0, 3); rLight.name = 'light'; rLight.position.set(0, 0, -1.1); rail.add(rLight);
+    const gold = rail.clone(true);
+    register('rail', rail, -0.095, null, 0x88ccff);
+    const goldMat = new THREE.MeshPhysicalMaterial({ color: 0xd4a52a, metalness: 1, roughness: 0.18, clearcoat: 1, envMapIntensity: 2.2 });
+    const goldGlow = s({ color: 0xffb040, emissive: 0xff7a10, emissiveIntensity: 3.5 });
+    register('gold', gold, -0.095, new Map([[white, goldMat], [glow, goldGlow], [gun, s({ color: 0x2a2014, roughness: 0.4, metalness: 0.8 })]]), 0xffc070);
   }
 
   get W() { return WEAPONS[this.weapon]; }
@@ -169,9 +228,18 @@ export class Player {
     this.audio.dryFire();
   }
 
+  // next rung on the rifle ladder; returns the weapon key or null when maxed out
+  unlockNext() {
+    const next = ORDER.find((k) => !this.unlocked[k]);
+    if (!next) return null;
+    this.unlock(next);
+    return next;
+  }
+
   unlock(name) {
     this.unlocked[name] = true;
     this.ammoBy[name] = WEAPONS[name].mag;
+    if (this.switchT > 0) { this.switchT = 0; this.weapon = this.switchTo; this.setModel(this.weapon); this.ammo = this.ammoBy[this.weapon]; }
     this.switchWeapon(name);
   }
 
@@ -181,9 +249,12 @@ export class Player {
       this.keys[e.code] = true;
       if (!this.enabled) return;
       if (e.code === 'KeyR') this.startReload();
-      if (e.code === 'Digit1') this.switchWeapon('l115');
-      if (e.code === 'Digit2') this.switchWeapon('fifty');
-      if (e.code === 'KeyQ') this.switchWeapon(this.weapon === 'l115' ? 'fifty' : 'l115');
+      const dig = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
+      if (dig >= 0) this.switchWeapon(ORDER[dig]);
+      if (e.code === 'KeyQ') {
+        const have = ORDER.filter((k) => this.unlocked[k]);
+        this.switchWeapon(have[(have.indexOf(this.weapon) + 1) % have.length]);
+      }
       if (e.code === 'KeyC' || e.code === 'ControlLeft') this.crouching = !this.crouching;
       if (e.code === 'Space') this.crouching = false;
     });
@@ -211,7 +282,7 @@ export class Player {
   }
 
   reset() {
-    this.weapon = 'l115'; this.unlocked = { l115: true }; this.ammoBy = { l115: 5, fifty: 8 }; this.switchT = 0;
+    this.weapon = 'l115'; this.unlocked = { l115: true }; this.ammoBy = FULL_AMMO(); this.switchT = 0;
     this.setModel('l115'); this.zoom = 6;
     this.health = 100; this.ammo = 5; this.reloadT = 0; this.boltT = 0; this.dead = false;
     this.ads = 0; this.adsHeld = false; this.crouching = false; this.crouch = 0; this.breath = 1;
@@ -226,7 +297,7 @@ export class Player {
     const W = this.W;
     if (this.ammo <= 0) { this.audio.dryFire(); this.startReload(); return; }
     this.ammo--;
-    this.audio.sniperShot(W.heavy);
+    if (W.rail) this.audio.railShot(); else this.audio.sniperShot(W.heavy);
     const origin = new THREE.Vector3(), dir = new THREE.Vector3();
     this.camera.getWorldPosition(origin);
     this.camera.getWorldDirection(dir);

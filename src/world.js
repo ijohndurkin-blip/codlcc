@@ -241,7 +241,11 @@ export function buildWorld(scene, T, renderer) {
   // LEFT LOW UNIT
   box(6.5, 3.3, 14, M.cladBlue, -27.3, 1.65, -36, 3);
   box(6.8, 0.2, 14.3, M.frame, -27.3, 3.38, -36, 1);
-  box(4.2, 2.6, 0.08, M.shutter, -27.3, 1.4, -28.97, 1.5, G, { cast: false });
+  // shutter rolled up: open valeting bay
+  box(4.2, 2.7, 0.08, new THREE.MeshStandardMaterial({ color: 0x15171a, roughness: 0.9 }), -27.3, 1.45, -28.94, 1.5, G, { cast: false });
+  add(new THREE.CylinderGeometry(0.28, 0.28, 4.5, 14), M.shutter, -27.3, 2.95, -28.85, G, { rz: Math.PI / 2 });
+  box(0.12, 2.8, 0.14, M.frame, -29.45, 1.4, -28.95, 1); box(0.12, 2.8, 0.14, M.frame, -25.15, 1.4, -28.95, 1);
+  box(0.9, 0.5, 0.5, new THREE.MeshStandardMaterial({ color: 0xe8c020, roughness: 0.5 }), -29.85, 0.4, -28.45, 1); // pressure washer unit
 
   // ================= RED BRICK BUILDING =================
   const BX0 = 30, BX1 = 48, BZ0 = -44, BZ1 = -12, BH = 8.6;

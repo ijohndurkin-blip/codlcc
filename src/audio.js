@@ -336,7 +336,7 @@ export class AudioEngine {
     } catch (e) { /* ignore */ }
   }
 
-  async loadKeh() { await Promise.all([this.loadClip('keh'), this.loadClip('craig')]); }
+  async loadKeh() { await Promise.all([this.loadClip('keh'), this.loadClip('craig'), this.loadClip('mot')]); }
 
   clipSource(name) { return (this.clips && this.clips[name] && this.clips[name].source) || 'speech'; }
   get kehSource() { return this.clipSource('keh'); }
@@ -398,7 +398,41 @@ export class AudioEngine {
       if (this.playClip('craig', g)) return;
       // Scottish-ish: prefer a Scottish voice (e.g. "Fiona" on macOS), otherwise en-GB; spelt the way he says it
       this.speak('Get yersel away!', { pitch: 1.25, rate: 1.05, prefer: [/fiona|scot|en-?scotland|en-GB-SCT/i, /en-GB/i] });
+    } else if (name === 'mot') {
+      const g = pos ? Math.max(0.7, this.spatial(pos).gain * 2.2) : 1.4;
+      if (this.playClip('mot', g)) return;
+      this.speak('M. O. T. done!', { pitch: 0.95, rate: 0.95, prefer: [/en-GB.*(male|daniel|george|arthur)/i, /daniel|george|arthur/i, /en-GB/i] });
     }
+  }
+
+  railShot() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, o = this.out(0, 1.0);
+    this.tone(o, t, 0.25, { type: 'sawtooth', freq: 300, freqEnd: 4000, gain: 0.25 });
+    this.noiseBurst(o, t + 0.02, 0.08, { type: 'highpass', freq: 2000, gain: 1.4 });
+    this.noiseBurst(o, t + 0.02, 0.9, { type: 'lowpass', freq: 900, freqEnd: 90, gain: 1.3, curve: 4 });
+    this.tone(o, t + 0.02, 0.8, { freq: 90, freqEnd: 30, gain: 1.2 });
+    this.tone(o, t + 0.1, 0.6, { type: 'sine', freq: 3200, freqEnd: 1200, gain: 0.08 });
+  }
+
+  // looping jet-wash hiss, positional
+  washLoop() {
+    const ctx = this.ctx;
+    const src = ctx.createBufferSource(); src.buffer = this.noise; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = 0.7;
+    const f2 = ctx.createBiquadFilter(); f2.type = 'lowpass'; f2.frequency.value = 5000;
+    const g = ctx.createGain(); g.gain.value = 0;
+    const p = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    src.connect(f); f.connect(f2); f2.connect(g);
+    if (p) { g.connect(p); p.connect(this.master); } else g.connect(this.master);
+    src.start();
+    return {
+      set: (pos, on) => {
+        const s = this.spatial(pos);
+        g.gain.setTargetAtTime(on ? 0.22 * s.gain : 0, ctx.currentTime, 0.15);
+        if (p) p.pan.setTargetAtTime(s.pan, ctx.currentTime, 0.1);
+      },
+    };
   }
 
   tyrePop(pos) {

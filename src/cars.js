@@ -6,6 +6,7 @@ import { LAYOUT } from './world.js';
 const TYPES = {
   hatch: { L: 4.05, W: 1.76, wb: 2.5, wr: 0.31, b: 0.26, hoodY: 0.82, cowlX: 0.72, cowlY: 0.95, roofFX: -0.12, roofY: 1.45, roofRX: -1.45, glassRX: -1.9, beltY: 0.99 },
   suv: { L: 4.45, W: 1.84, wb: 2.66, wr: 0.35, b: 0.34, hoodY: 1.0, cowlX: 0.88, cowlY: 1.1, roofFX: 0.0, roofY: 1.68, roofRX: -1.72, glassRX: -2.08, beltY: 1.14 },
+  x6: { L: 4.9, W: 1.95, wb: 2.93, wr: 0.39, b: 0.4, hoodY: 1.06, cowlX: 0.95, cowlY: 1.16, roofFX: 0.05, roofY: 1.66, roofRX: -0.95, glassRX: -2.15, beltY: 1.16 },
   saloon: { L: 4.6, W: 1.8, wb: 2.75, wr: 0.31, b: 0.25, hoodY: 0.8, cowlX: 0.95, cowlY: 0.93, roofFX: 0.12, roofY: 1.41, roofRX: -1.05, glassRX: -1.65, beltY: 0.99 },
 };
 
@@ -242,6 +243,12 @@ export class CarSystem {
 
   add(car) { this.group.add(car); this.all.push(car); }
 
+  addStatic(car) {
+    this.add(car);
+    car.userData.orig = { pos: car.position.clone(), rotY: car.rotation.y };
+    this.syncInstances(car);
+  }
+
   addDynamic(car) {
     this.group.add(car); this.all.push(car);
     car.userData.dynamic = true;
@@ -409,7 +416,7 @@ export class CarSystem {
         car.position.y += (ty - car.position.y) * k;
         if (Math.abs(s.roll - car.rotation.x) < 0.002 && Math.abs(car.position.y - ty) < 0.002) u.settle = null;
         moved = true;
-      } else if (!u.destroyed && !u.dynamic) {
+      } else if (!u.destroyed && !u.dynamic && !u.driven) {
         const t = u.tilt;
         const dz = t.pitch - car.rotation.z, dx = t.roll - car.rotation.x, dy = (u.orig.pos.y - t.drop) - car.position.y;
         if (Math.abs(dz) + Math.abs(dx) + Math.abs(dy) > 0.0005) {
@@ -418,7 +425,7 @@ export class CarSystem {
           moved = true;
         }
       }
-      if (moved) this.syncInstances(car);
+      if (moved || u.driven) this.syncInstances(car);
       if (u.fire) u.fire.pos.copy(car.position).add(new V3(0, 0.8, 0));
       if (u.smoke) u.smoke.pos.copy(this.enginePos(car));
     }
@@ -446,7 +453,7 @@ export class CarSystem {
       u.paintMesh.material = u.paintMat; u.trimMesh.material = S.trim;
       u.glass.material = S.glass; u.glass.visible = true; u.indMesh.visible = true;
       u.indMat.emissiveIntensity = 0;
-      Object.assign(u, { hp: 10, glassHits: 0, tyres: {}, tilt: { pitch: 0, roll: 0, drop: 0 }, destroyed: false, flying: null, settle: null, alarm: 0, smoke: null, fire: null });
+      Object.assign(u, { hp: 10, glassHits: 0, tyres: {}, tilt: { pitch: 0, roll: 0, drop: 0 }, destroyed: false, flying: null, settle: null, alarm: 0, smoke: null, fire: null, driven: false });
       if (u.sign) u.sign.off = false;
       this.syncInstances(car);
     }
