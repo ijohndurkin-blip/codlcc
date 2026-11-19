@@ -11,7 +11,7 @@ export const LAYOUT = {
   forecourt: { x0: -30, x1: 30, z0: -29, z1: -9 },
   roofY: 7.5,
   parapetZ: 9.0,
-  lanes: { road: -2.5, nearRoad: 0.9, pave: -7.4, a1: -15.3, a2: -21.3, a3: -27.8 },
+  lanes: { road: -2.0, nearRoad: 0.9, pave: -7.4, a1: -15.3, a2: -21.3, a3: -27.8 },
   columns: [-29.2, -21.5, -1, 17, 28.4],
   rows: [-12.4, -18.3, -24.4],
 };

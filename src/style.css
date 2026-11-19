@@ -141,3 +141,5 @@ kbd { display: inline-block; padding: 1px 7px; border: 1px solid rgba(255,255,25
   .menu-controls { align-self: stretch; max-width: none; }
   #minimap { width: 120px; height: 120px; }
 }
+
+.row-btns { display: flex; gap: 8px; }

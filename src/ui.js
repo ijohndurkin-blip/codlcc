@@ -34,6 +34,12 @@ export class UI {
 
   updatePlayer(p, rangeM) {
     this.el.ammo.textContent = p.ammo;
+    const W = p.W;
+    if (this.el.pips.children.length !== W.mag) {
+      this.el.pips.innerHTML = '';
+      for (let i = 0; i < W.mag; i++) this.el.pips.appendChild(document.createElement('i'));
+      document.getElementById('weapon-name').textContent = W.name;
+    }
     [...this.el.pips.children].forEach((pip, i) => pip.classList.toggle('spent', i >= p.ammo));
     this.el.reloadHint.classList.toggle('hidden', !(p.ammo === 0 && p.reloadT <= 0));
     this.el.health.style.width = `${p.health}%`;
@@ -116,7 +122,7 @@ export class UI {
   }
 
   // ---------- minimap ----------
-  drawMinimap(player, enemies, cars) {
+  drawMinimap(player, enemies, cars, civ) {
     const c = this.mm, W = 200, H = 200, S = 2.3;
     const px = player.pos.x, pz = player.pos.z, yaw = player.yaw;
     const sin = Math.sin(yaw), cos = Math.cos(yaw);
@@ -160,6 +166,12 @@ export class UI {
       const [a, b] = map(g.mesh.position.x, g.mesh.position.z);
       c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(a, b, 3, 0, Math.PI * 2); c.fill();
     }
+    if (civ) for (const p of civ.people) {
+      if (!p.alive || !p.root.parent) continue;
+      const [a, b] = map(p.root.position.x, p.root.position.z);
+      c.fillStyle = '#4fc3ff'; c.beginPath(); c.arc(a, b, 3.5, 0, Math.PI * 2); c.fill();
+    }
+    if (civ && civ.bmw) { const [a, b] = map(civ.bmw.position.x, civ.bmw.position.z); c.fillStyle = '#a9cbe8'; c.fillRect(a - 5, b - 2.5, 10, 5); }
     // player
     c.fillStyle = '#9fe870';
     c.beginPath(); c.moveTo(ox, oy - 8); c.lineTo(ox + 6, oy + 6); c.lineTo(ox, oy + 3); c.lineTo(ox - 6, oy + 6); c.closePath(); c.fill();

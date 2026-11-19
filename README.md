@@ -35,6 +35,7 @@ Import the repo in Vercel. It auto-detects Vite (`vercel.json` pins it anyway):
 | C or Ctrl | Crouch behind the parapet (dodges incoming fire) |
 | W A S D | Move along the rooftop |
 | R | Reload |
+| 1 / 2 / Q | Swap rifle (once the .50 cal is unlocked) |
 | Esc | Pause |
 
 ## The "Keh"
@@ -45,6 +46,30 @@ On every kill the game says "Keh". It uses the first one of these it finds:
    It's saved in your browser.
 2. **A sound file:** drop a `keh.mp3` into `public/` before deploying.
 3. **Text-to-speech** built into the browser.
+
+## Craig, Kev Jones and the .50 cal
+
+- **Craig** (fictional), the wee bald Scottish owner, comes out of the sliding showroom door now and again and
+  shouts **"Get yourself away!"**
+- **Kev Jones** (fictional), a short, bald car trader, turns up in his **pale blue 3 Series**, parks at the kerb,
+  walks over to haggle with Craig, then drives off.
+- Drop **either** of them and you unlock the **.50 CAL ANTI-MATERIEL**. It's semi-auto with an 8-round mag and
+  zooms to 16x. It goes through bodies and cars, and anything it hits goes down. Swap with `1`/`2` or `Q`.
+- They come back on later waves.
+- Craig's voice works like the Keh: hit **🎙 RECORD CRAIG'S SHOUT** on the menu, or drop a `craig.mp3` into
+  `public/`. Otherwise text-to-speech does it, using a Scottish voice if your system has one.
+
+## Shooting the cars up
+
+Every car can be wrecked, including the four on display inside the showroom:
+
+- **Glass** cracks on the first hit and shatters on the second. Rounds carry on through, so you can shoot
+  troops hiding behind a car through its windows.
+- **Tyres** pop, and the car sags onto that corner.
+- **Roof price boards** get shot clean off and tumble onto the tarmac.
+- **Bodywork** keeps its bullet holes. A battered car starts smoking, then **explodes**, flips, burns and can
+  set off the cars next to it.
+- Alarms go off when cars get hit.
 
 ## Gameplay
 

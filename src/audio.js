@@ -6,7 +6,6 @@ export class AudioEngine {
   constructor() {
     this.ctx = null;
     this.kehBuffer = null;
-    this.kehSource = 'speech';
     this.listener = { pos: new THREE.Vector3(), right: new THREE.Vector3(1, 0, 0) };
     this.music = null;
   }
@@ -96,9 +95,13 @@ export class AudioEngine {
   }
 
   // ---------- weapons ----------
-  sniperShot() {
+  sniperShot(heavy = false) {
     if (!this.ctx) return;
-    const t = this.ctx.currentTime, o = this.out(0, 0.9);
+    const t = this.ctx.currentTime, o = this.out(0, heavy ? 1.2 : 0.9);
+    if (heavy) {
+      this.noiseBurst(o, t, 0.9, { type: 'lowpass', freq: 600, freqEnd: 70, gain: 1.6, curve: 4 });
+      this.tone(o, t, 0.6, { freq: 70, freqEnd: 25, gain: 1.4 });
+    }
     this.noiseBurst(o, t, 0.07, { type: 'highpass', freq: 1800, gain: 1.4 });
     this.noiseBurst(o, t, 0.55, { type: 'lowpass', freq: 900, freqEnd: 120, gain: 1.6, curve: 4 });
     this.tone(o, t, 0.4, { freq: 110, freqEnd: 35, gain: 1.2 });
@@ -310,67 +313,99 @@ export class AudioEngine {
   }
   stopMusic() { if (this.music) this.music.stop(); }
 
-  // ---------- KEH ----------
-  async loadKeh() {
+  // ---------- voice clips: "keh" (you) and "craig" ----------
+  clipKey(name) { return name === 'keh' ? KEH_KEY : `lcc_clip_${name}_v1`; }
+
+  async loadClip(name) {
+    this.clips = this.clips || {};
+    const c = this.clips[name] = { buffer: null, source: 'speech' };
     try {
-      const saved = localStorage.getItem(KEH_KEY);
+      const saved = localStorage.getItem(this.clipKey(name));
       if (saved) {
-        const buf = await (await fetch(saved)).arrayBuffer();
-        this.kehBuffer = await this.ctx.decodeAudioData(buf);
-        this.kehSource = 'recorded';
+        c.buffer = await this.ctx.decodeAudioData(await (await fetch(saved)).arrayBuffer());
+        c.source = 'recorded';
         return;
       }
     } catch (e) { /* ignore */ }
     try {
-      const r = await fetch('/keh.mp3');
+      const r = await fetch(`/${name}.mp3`);
       if (r.ok && (r.headers.get('content-type') || '').includes('audio')) {
-        this.kehBuffer = await this.ctx.decodeAudioData(await r.arrayBuffer());
-        this.kehSource = 'file';
+        c.buffer = await this.ctx.decodeAudioData(await r.arrayBuffer());
+        c.source = 'file';
       }
     } catch (e) { /* ignore */ }
   }
 
-  async setRecordedKeh(blob) {
+  async loadKeh() { await Promise.all([this.loadClip('keh'), this.loadClip('craig')]); }
+
+  clipSource(name) { return (this.clips && this.clips[name] && this.clips[name].source) || 'speech'; }
+  get kehSource() { return this.clipSource('keh'); }
+
+  async setRecordedClip(name, blob) {
     this.init();
     const ab = await blob.arrayBuffer();
-    this.kehBuffer = await this.ctx.decodeAudioData(ab.slice(0));
-    this.kehSource = 'recorded';
+    this.clips = this.clips || {};
+    this.clips[name] = { buffer: await this.ctx.decodeAudioData(ab.slice(0)), source: 'recorded' };
     try {
       const url = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(fr.result); fr.readAsDataURL(blob); });
-      localStorage.setItem(KEH_KEY, url);
+      localStorage.setItem(this.clipKey(name), url);
     } catch (e) { /* storage may be unavailable */ }
   }
 
-  clearRecordedKeh() {
-    try { localStorage.removeItem(KEH_KEY); } catch (e) { /* ignore */ }
-    this.kehBuffer = null; this.kehSource = 'speech';
-    if (this.ctx) this.loadKeh();
+  clearRecordedClip(name) {
+    try { localStorage.removeItem(this.clipKey(name)); } catch (e) { /* ignore */ }
+    if (this.clips) this.clips[name] = { buffer: null, source: 'speech' };
+    if (this.ctx) this.loadClip(name);
+  }
+
+  speak(text, { pitch = 1, rate = 1, prefer = [] } = {}) {
+    if (!('speechSynthesis' in window)) return false;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = speechSynthesis.getVoices();
+      let v = null;
+      for (const re of prefer) { v = voices.find((x) => re.test(x.name) || re.test(x.lang)); if (v) break; }
+      if (v) u.voice = v;
+      u.pitch = pitch; u.rate = rate; u.volume = 1;
+      speechSynthesis.speak(u);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  playClip(name, gain = 1.4) {
+    const c = this.clips && this.clips[name];
+    if (!c || !c.buffer || !this.ctx) return false;
+    const src = this.ctx.createBufferSource(); src.buffer = c.buffer;
+    const g = this.ctx.createGain(); g.gain.value = gain;
+    src.connect(g); g.connect(this.master); src.start();
+    return true;
   }
 
   keh() {
-    if (this.kehBuffer && this.ctx) {
-      const src = this.ctx.createBufferSource(); src.buffer = this.kehBuffer;
-      const g = this.ctx.createGain(); g.gain.value = 1.4;
-      src.connect(g); g.connect(this.master); src.start();
-      return;
-    }
-    if ('speechSynthesis' in window) {
-      try {
-        speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance('Keh!');
-        const voices = speechSynthesis.getVoices();
-        const gb = voices.find((v) => /en-GB/i.test(v.lang) && /male|daniel|george|arthur/i.test(v.name)) || voices.find((v) => /en-GB/i.test(v.lang));
-        if (gb) u.voice = gb;
-        u.rate = 1.15; u.pitch = 0.85; u.volume = 1;
-        speechSynthesis.speak(u);
-        return;
-      } catch (e) { /* fall through */ }
-    }
-    // last resort: a synthesized "keh"
+    if (this.playClip('keh')) return;
+    if (this.speak('Keh!', { pitch: 0.85, rate: 1.15, prefer: [/en-GB.*(male|daniel|george|arthur)/i, /daniel|george|arthur/i, /en-GB/i] })) return;
     if (!this.ctx) return;
     const t = this.ctx.currentTime, o = this.out(0, 0.1);
     this.noiseBurst(o, t, 0.04, { type: 'bandpass', freq: 2500, q: 2, gain: 0.8 });
     this.tone(o, t + 0.04, 0.18, { type: 'sawtooth', freq: 140, freqEnd: 110, gain: 0.25 });
-    this.noiseBurst(o, t + 0.04, 0.18, { type: 'bandpass', freq: 1900, q: 6, gain: 0.3 });
+  }
+
+  // characters' lines
+  say(name, pos) {
+    if (name === 'craig') {
+      const g = pos ? Math.max(0.7, this.spatial(pos).gain * 2.2) : 1.4;
+      if (this.playClip('craig', g)) return;
+      // Scottish-ish: prefer a Scottish voice (e.g. "Fiona" on macOS), otherwise en-GB; spelt the way he says it
+      this.speak('Get yersel away!', { pitch: 1.25, rate: 1.05, prefer: [/fiona|scot|en-?scotland|en-GB-SCT/i, /en-GB/i] });
+    }
+  }
+
+  tyrePop(pos) {
+    if (!this.ctx) return;
+    const s = this.spatial(pos), t = this.ctx.currentTime + s.dist / 343, o = this.out(s.pan, 0.5);
+    const g = Math.min(1, s.gain * 2.5);
+    this.noiseBurst(o, t, 0.08, { type: 'lowpass', freq: 2500, gain: 1.0 * g });
+    this.noiseBurst(o, t + 0.05, 1.4, { type: 'highpass', freq: 3500, gain: 0.25 * g, attack: 0.05, curve: 2 });
   }
 }

@@ -14,7 +14,7 @@ export class Effects {
       dot: radialTexture([[0, 'rgba(255,255,255,1)'], [0.5, 'rgba(255,255,255,0.6)'], [1, 'rgba(255,255,255,0)']], 32),
     };
     this.add = this.makePool(260, THREE.AdditiveBlending);
-    this.norm = this.makePool(320, THREE.NormalBlending);
+    this.norm = this.makePool(380, THREE.NormalBlending);
     this.emitters = [];
 
     // tracers
@@ -101,13 +101,19 @@ export class Effects {
     t.mesh.scale.set(width, width, 0.01);
   }
 
-  decal(point, normal, size = 1) {
+  decal(point, normal, size = 1, parent = null) {
     const d = this.decals[this.decalIdx++ % this.decals.length];
+    if (d.parent !== this.group) this.group.attach(d);
     d.visible = true;
     d.position.copy(point).addScaledVector(normal, 0.012);
     d.lookAt(point.clone().add(normal));
     d.scale.setScalar(size * (0.7 + Math.random() * 0.6));
+    if (parent) { d.updateMatrixWorld(); parent.attach(d); }
     return d;
+  }
+
+  detachDecals(obj) {
+    for (const d of this.decals) if (d.parent === obj) { this.group.attach(d); d.visible = false; }
   }
 
   // ---------- presets ----------
@@ -171,8 +177,10 @@ export class Effects {
     this.spawn(this.add, { pos: pos.clone().add(new THREE.Vector3(0, 1.5, 0)), tex: 'flash', size0: 4, size1: 16, life: 0.25 });
   }
 
-  addFire(pos, duration, scale = 1) {
-    this.emitters.push({ pos: pos.clone(), until: duration, t: 0, acc: 0, scale });
+  addFire(pos, duration, scale = 1, smokeOnly = false) {
+    const e = { pos: pos.clone(), until: duration, t: 0, acc: 0, scale, smokeOnly };
+    this.emitters.push(e);
+    return e;
   }
 
   grenadeBlast(pos) {
@@ -227,9 +235,10 @@ export class Effects {
       const e = this.emitters[i];
       e.t += dt; e.acc += dt;
       const s = e.scale * Math.max(0.2, 1 - e.t / e.until);
-      while (e.acc > 0.05) {
-        e.acc -= 0.05;
+      while (e.acc > 0.08) {
+        e.acc -= 0.08;
         const jitter = new THREE.Vector3((Math.random() - 0.5) * 2 * s, 0, (Math.random() - 0.5) * 2 * s);
+        if (e.smokeOnly) { if (Math.random() < 0.35) this.spawn(this.norm, { pos: e.pos.clone().add(jitter.multiplyScalar(0.2)), vel: new THREE.Vector3(0.4, 1.6 + Math.random(), 0.1), size0: 0.4, size1: 3.5, life: 2.5 + Math.random(), alpha: 0.35, color: 0x8a8682, drag: 0.3 }); continue; }
         if (e.t < e.until * 0.7) this.spawn(this.add, { pos: e.pos.clone().add(jitter), vel: new THREE.Vector3(0, 2 + Math.random() * 2, 0), tex: 'fire', size0: 1.2 * s, size1: 0.3, life: 0.6 + Math.random() * 0.4, alpha: 0.9 });
         this.spawn(this.norm, { pos: e.pos.clone().add(jitter).add(new THREE.Vector3(0, 1.5, 0)), vel: new THREE.Vector3(0.6, 2.5 + Math.random(), 0.2), size0: 1 * s, size1: 6 * s, life: 4 + Math.random() * 2, alpha: 0.5, color: 0x1e1c1b, drag: 0.2 });
       }

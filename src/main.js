@@ -8,7 +8,8 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { buildTextures, setAnisotropy } from './textures.js';
 import { buildWorld, LAYOUT } from './world.js';
-import { placeCars, nearestCar } from './cars.js';
+import { CarSystem } from './cars.js';
+import { Civilians } from './civilians.js';
 import { Effects } from './effects.js';
 import { AudioEngine } from './audio.js';
 import { Player } from './player.js';
@@ -132,14 +133,15 @@ async function boot() {
   await progress(48, 'Building Liverpool Car Centre…');
   const world = buildWorld(scene, T, renderer);
   await progress(66, 'Parking the stock…');
-  const { group: carGroup, cars } = placeCars(scene);
-  const crackedGlass = new THREE.MeshStandardMaterial({ map: T.crackedGlass, roughness: 0.25, metalness: 0.3 });
   await progress(78, 'Briefing the troops…');
   const fx = new Effects(scene);
   const audio = new AudioEngine();
+  const carSys = new CarSystem(scene, T, fx, audio);
+  const carGroup = carSys.group, cars = carSys.cars;
   const ui = new UI();
   const player = new Player({ camera, vmScene, vmCamera, audio, T, canvas });
   const enemies = new Enemies({ scene, T, audio, effects: fx, cars, player });
+  const civ = new Civilians({ scene, world, carSys, audio, enemies });
 
   // ---------- post ----------
   await progress(88, 'Calibrating optics…');
@@ -188,9 +190,8 @@ async function boot() {
     state: 'menu', score: 0, kills: 0, headshots: 0, shots: 0, hits: 0, longest: 0, streak: 0, wave: 0,
     timeScale: 1, slowT: 0, lastKeh: 0, time: 0, heartbeatT: 0, rangeT: 0, range: 0, waveTimer: null,
   };
-  const alarms = [];
   const raycaster = new THREE.Raycaster(); raycaster.far = 600;
-  const shootTargets = [world.group, carGroup, ...enemies.shootables()];
+  const shootTargets = [world.group, carGroup, civ.group, ...enemies.shootables()];
   let best = { score: 0, wave: 0 };
   try { best = JSON.parse(localStorage.getItem('lcc_best') || '{"score":0,"wave":0}'); } catch (e) { /* ignore */ }
   const showBest = () => { $('best-score').textContent = best.score.toLocaleString('en-GB'); $('best-wave').textContent = best.wave; };
@@ -201,17 +202,18 @@ async function boot() {
 
   // ---------- shooting ----------
   const tmpN = new THREE.Vector3();
-  const findCar = (o, point) => { let c = o; while (c && !c.userData.isCar) c = c.parent; return c || (point ? nearestCar(carGroup, point) : null); };
-  player.onShoot = (origin, dir, muzzle, scoped) => {
+  const findCar = (o) => { let c = o; while (c && !c.userData.isCar) c = c.parent; return c; };
+  player.onShoot = (origin, dir, muzzle, scoped, W = { power: 1, pierce: 0 }) => {
     G.shots++;
     raycaster.set(origin, dir);
     const hits = raycaster.intersectObjects(shootTargets, true);
     let end = origin.clone().addScaledVector(dir, 400);
-    let throughGlass = false;
+    let throughGlass = false, pierce = W.pierce || 0, kills = 0, counted = false;
+    const seen = new Set();
+    const stopHere = (h) => { end = h.point.clone(); return pierce-- <= 0; };
     for (const h of hits) {
       const o = h.object, ud = o.userData;
-      if (!o.visible || o.raycast === undefined) continue;
-      if (ud.broken) continue;
+      if (!o.visible || ud.broken) continue;
       const normal = h.face ? tmpN.copy(h.face.normal).transformDirection(o.matrixWorld).clone() : dir.clone().negate();
       if (ud.glassPane) {
         ud.broken = true; o.visible = false;
@@ -219,57 +221,112 @@ async function boot() {
         throughGlass = true;
         continue;
       }
-      if (ud.carPart === 'glass') {
-        const car = findCar(o, h.point);
-        if (car && !car.userData.cracked) { car.userData.cracked = true; o.material = crackedGlass; }
-        fx.glass(h.point, dir, 18); audio.impact('glass', h.point);
-        if (car) triggerAlarm(car, 0.6);
-        throughGlass = true;
+      if (ud.roofSign) {
+        const car = carSys.carFromSign(h.instanceId);
+        if (car && car.userData.sign && !car.userData.sign.off) {
+          carSys.knockSign(car, dir);
+          G.score += 25; ui.points([['+25 SIGN SHOT OFF', false]]); ui.hitmarker(false);
+        }
         continue;
       }
-      end = h.point.clone();
+      if (ud.carPart) {
+        const car = findCar(o);
+        if (!car) continue;
+        const res = carSys.hit(car, ud.carPart, h.point, normal, dir, W.power);
+        if (ud.carPart === 'glass') { throughGlass = true; continue; }
+        if (res.penetrate && !stopHere(h)) continue;
+        end = h.point.clone();
+        break;
+      }
       if (ud.soldier) {
         const s = ud.soldier;
-        const res = enemies.damage(s, ud.part, dir, h.point);
+        if (seen.has(s)) continue; seen.add(s);
+        const res = enemies.damage(s, ud.part, dir, h.point, W.power);
         if (!res.already) {
-          G.hits++;
+          if (!counted) { G.hits++; counted = true; }
           if (res.killed) {
-            const dist = origin.distanceTo(h.point);
-            registerKill(s, { headshot: res.headshot, dist, throughGlass });
+            kills++;
+            registerKill(s, { headshot: res.headshot, dist: origin.distanceTo(h.point), throughGlass });
           } else {
             ui.hitmarker(false); audio.hitmarker(false);
             ui.points([['+10 HIT', false]]); G.score += 10;
           }
         }
-      } else if (ud.truck) {
+        if (stopHere(h)) break;
+        continue;
+      }
+      if (ud.civilian) {
+        const c = ud.civilian;
+        if (seen.has(c)) continue; seen.add(c);
+        fx.blood(h.point, dir, ud.part === 'head');
+        audio.impact('flesh', h.point);
+        if (c.alive) {
+          const headshot = ud.part === 'head';
+          c.die(dir, headshot);
+          if (!counted) { G.hits++; counted = true; }
+          kills++;
+          civilianKilled(c, { headshot, dist: origin.distanceTo(h.point) });
+        }
+        if (stopHere(h)) break;
+        continue;
+      }
+      end = h.point.clone();
+      if (ud.truck) {
         const boom = enemies.hitTruck(ud.truck, ud.part, h.point, normal);
         fx.decal(h.point, normal, 1);
         if (boom) { G.hits++; ui.hitmarker(false); }
-      } else if (ud.carPart) {
-        fx.sparks(h.point, normal, 8);
-        audio.impact('metal', h.point);
-        fx.decal(h.point, normal, 0.8);
-        const car = findCar(o, h.point);
-        if (car) triggerAlarm(car, 0.4);
       } else {
         fx.impactDust(h.point, normal);
-        fx.decal(h.point, normal, 1.2);
+        fx.decal(h.point, normal, W.power >= 3 ? 2 : 1.2);
         audio.impact('dirt', h.point);
       }
       break;
     }
-    fx.tracer(muzzle, end, { trail: true, life: 0.7, width: 0.022, color: 0xdfe8ff });
-    fx.tracer(muzzle, end, { color: 0xffe2a8, width: 0.03, speed: 900, len: 8 });
+    if (kills >= 2) { G.score += 100 * (kills - 1); setTimeout(() => ui.points([[`+${100 * (kills - 1)} COLLATERAL x${kills}`, true]]), 300); }
+    fx.tracer(muzzle, end, { trail: true, life: 0.7, width: W.power >= 3 ? 0.04 : 0.022, color: 0xdfe8ff });
+    fx.tracer(muzzle, end, { color: 0xffe2a8, width: W.power >= 3 ? 0.05 : 0.03, speed: 900, len: 8 });
     fx.muzzle(muzzle, dir, true);
-    fx.flashLight(muzzle, 20, 0.07);
+    fx.flashLight(muzzle, W.power >= 3 ? 35 : 20, 0.07);
   };
 
-  function triggerAlarm(car, chance) {
-    if (car.userData.alarm > 0 || Math.random() > chance) return;
-    car.userData.alarm = 7;
-    alarms.push(car);
-    audio.carAlarm(car.position, 7);
+  function civilianKilled(c, { headshot = false, dist = 0 } = {}) {
+    G.kills++;
+    const pts = 500 + (headshot ? 50 : 0);
+    G.score += pts;
+    ui.points([[`+500 ${c.name} DOWN`, true], ...(headshot ? [['+50 HEADSHOT', false]] : [])]);
+    ui.hitmarker(true); audio.hitmarker(true, headshot);
+    const now = performance.now();
+    if (now - G.lastKeh > 350) { audio.keh(); G.lastKeh = now; }
+    ui.kehPop();
+    const nice = c.id === 'craig' ? 'Craig' : 'Kev Jones';
+    ui.feed(`<span class="you">YOU</span> ⌖ ${nice} ${headshot ? '<span class="hs">HEADSHOT</span> ' : ''}<span class="keh">"Keh"</span>`);
+    if (!player.unlocked.fifty) {
+      setTimeout(() => {
+        player.unlock('fifty');
+        audio.stinger();
+        ui.banner('NEW WEAPON UNLOCKED', '.50 CAL ANTI-MATERIEL · [1] / [2] / [Q] TO SWAP', 4000);
+        sayRadio('HQ', c.id === 'craig' ? 'Craig had a .50 cal stashed in the office. It\'s yours now.' : 'Kev had a .50 cal in the boot of the 3 Series. Help yourself.', 4000);
+      }, 900);
+    }
   }
+  civ.onKilledInBlast = (c) => civilianKilled(c);
+  civ.onSay = (who, text, ms) => ui.subtitle(`<b>${who}:</b> ${text}`, ms);
+
+  function blastAt(pos, radius, fromCar) {
+    for (const s of enemies.soldiers) {
+      if (s.alive && s.root.position.distanceTo(pos) < radius) enemies.kill(s, new THREE.Vector3().subVectors(s.root.position, pos).normalize().add(new THREE.Vector3(0, 0.5, 0)), false, true);
+    }
+    for (const c of civ.blast(pos, radius)) { c.die(new THREE.Vector3().subVectors(c.root.position, pos).normalize(), false); civilianKilled(c); }
+    const d = camera.position.distanceTo(pos);
+    player.shake = Math.max(player.shake, 2.5 * Math.max(0, 1 - d / 80));
+    for (const p of world.glassPanes) if (!p.userData.broken && p.position.distanceTo(pos) < (fromCar ? 9 : 30) && Math.random() < 0.6) {
+      p.userData.broken = true; p.visible = false; fx.glass(p.position, new THREE.Vector3(0, 0, 1), 30);
+    }
+  }
+  carSys.onExplode = (pos, car) => {
+    blastAt(pos, 5.5, true);
+    if (G.state === 'playing') { G.score += 150; ui.points([['+150 VEHICLE DESTROYED', true]]); }
+  };
 
   function registerKill(s, { headshot = false, dist = 0, throughGlass = false, explosive = false } = {}) {
     G.kills++; G.streak++;
@@ -303,8 +360,12 @@ async function boot() {
   enemies.onExplosion = (pos) => {
     const d = camera.position.distanceTo(pos);
     player.shake = Math.max(player.shake, 3 * Math.max(0, 1 - d / 80));
-    for (const c of cars) if (c.car.position.distanceTo(pos) < 14) triggerAlarm(c.car, 0.9);
-    // blow out nearby showroom panes
+    for (const c of carSys.all) {
+      const cd = c.position.distanceTo(pos);
+      if (cd < 14) carSys.alarm(c, 0.9);
+      if (cd < 7) carSys.damage(c, cd < 4 ? 8 : 4);
+    }
+    for (const c of civ.blast(pos, 8.5)) { c.die(new THREE.Vector3().subVectors(c.root.position, pos).normalize(), false); civilianKilled(c); }
     for (const p of world.glassPanes) if (!p.userData.broken && p.position.distanceTo(pos) < 30 && Math.random() < 0.5) {
       p.userData.broken = true; p.visible = false; fx.glass(p.position, new THREE.Vector3(0, 0, 1), 30);
     }
@@ -334,6 +395,7 @@ async function boot() {
     if (G.state !== 'playing' && G.state !== 'paused') return;
     G.wave = n;
     enemies.startWave(n);
+    civ.onWaveStart(n);
     ui.banner(`WAVE ${n}`, n === 1 ? 'DEFEND THE FORECOURT' : n % 3 === 0 ? 'ENEMY SNIPERS SPOTTED' : 'HOSTILES INBOUND', 2800);
   }
 
@@ -354,6 +416,8 @@ async function boot() {
     Object.assign(G, { score: 0, kills: 0, headshots: 0, shots: 0, hits: 0, longest: 0, streak: 0, wave: 0, slowT: 0 });
     enemies.reset();
     fx.clearPersistent();
+    civ.reset();
+    carSys.reset();
     for (const p of world.glassPanes) { p.visible = true; p.userData.broken = false; }
     player.reset();
     player.enabled = true;
@@ -407,19 +471,33 @@ async function boot() {
   $('sens').oninput = (e) => { player.sensitivity = 0.0022 * parseFloat(e.target.value); };
 
   // ---------- keh recording ----------
+  const SRC = (n) => ({ recorded: 'YOUR RECORDING ✔', file: `${n}.mp3` })[audio.clipSource(n)] || 'built-in (text-to-speech)';
   const kehStatus = () => {
-    const src = audio.kehSource;
-    $('keh-status').textContent = `Keh voice: ${src === 'recorded' ? 'YOUR RECORDING ✔' : src === 'file' ? 'keh.mp3' : 'built-in (text-to-speech)'}`;
-    $('btn-clearkeh').classList.toggle('hidden', src !== 'recorded');
+    $('keh-status').textContent = `Keh voice: ${SRC('keh')} · Craig's voice: ${SRC('craig')}`;
+    $('btn-clearkeh').classList.toggle('hidden', audio.clipSource('keh') !== 'recorded' && audio.clipSource('craig') !== 'recorded');
+  };
+  let recMode = 'keh';
+  const REC = {
+    keh: { title: 'RECORD YOUR KEH', text: 'Hit record and say <b>"Keh"</b>. It plays every time you drop someone.', secs: 1.5 },
+    craig: { title: "RECORD CRAIG'S SHOUT", text: 'Hit record and do your best wee Scottish <b>"Get yourself away!"</b>. Craig shouts it from the showroom door.', secs: 2.5 },
+  };
+  const openRec = (mode) => {
+    recMode = mode; audio.init();
+    $('rec-title').textContent = REC[mode].title; $('rec-text').innerHTML = REC[mode].text;
+    $('rec-go').textContent = `● RECORD (${REC[mode].secs}s)`;
+    $('record').classList.remove('hidden'); $('rec-msg').textContent = '';
   };
   $('btn-testkeh').onclick = () => { audio.init(); setTimeout(() => { audio.keh(); kehStatus(); }, 150); ui.kehPop(); };
-  $('btn-clearkeh').onclick = () => { audio.clearRecordedKeh(); setTimeout(kehStatus, 300); };
-  $('btn-record').onclick = () => { audio.init(); $('record').classList.remove('hidden'); $('rec-msg').textContent = ''; };
+  $('btn-testcraig').onclick = () => { audio.init(); setTimeout(() => { audio.say('craig'); kehStatus(); }, 150); };
+  $('btn-clearkeh').onclick = () => { audio.clearRecordedClip('keh'); audio.clearRecordedClip('craig'); setTimeout(kehStatus, 300); };
+  $('btn-record').onclick = () => openRec('keh');
+  $('btn-record-craig').onclick = () => openRec('craig');
   $('rec-close').onclick = () => { $('record').classList.add('hidden'); kehStatus(); };
   $('rec-go').onclick = async () => {
     const msg = $('rec-msg');
-    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { msg.textContent = 'Recording is not supported in this browser — drop a keh.mp3 in /public instead.'; return; }
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) { msg.textContent = `Recording is not supported in this browser — drop a ${recMode}.mp3 in /public instead.`; return; }
     try {
+      const mode = recMode;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const rec = new MediaRecorder(stream);
       const chunks = [];
@@ -434,12 +512,16 @@ async function boot() {
         live = false; $('rec-level').style.width = '0%';
         stream.getTracks().forEach((t) => t.stop());
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-        try { await audio.setRecordedKeh(blob); msg.textContent = 'Saved! That\'s your Keh now.'; audio.keh(); kehStatus(); }
-        catch (e) { msg.textContent = 'Could not decode the recording — try again.'; }
+        try {
+          await audio.setRecordedClip(mode, blob);
+          msg.textContent = mode === 'keh' ? 'Saved! That\'s your Keh now.' : 'Saved! That\'s Craig now.';
+          if (mode === 'keh') audio.keh(); else audio.say('craig');
+          kehStatus();
+        } catch (e) { msg.textContent = 'Could not decode the recording — try again.'; }
       };
-      msg.textContent = 'Recording… say "Keh"!';
+      msg.textContent = mode === 'keh' ? 'Recording… say "Keh"!' : 'Recording… "Get yourself away!"';
       rec.start();
-      setTimeout(() => rec.stop(), 1500);
+      setTimeout(() => rec.stop(), REC[mode].secs * 1000);
     } catch (e) { msg.textContent = 'Microphone permission denied.'; }
   };
 
@@ -475,6 +557,7 @@ async function boot() {
     } else if (G.state === 'playing' || G.state === 'over') {
       player.update(dt);
       enemies.update(dt);
+      civ.update(dt, G.state === 'playing' && G.wave > 0);
       if (G.state === 'playing' && player.dead) gameOver();
       // HUD
       G.rangeT -= raw;
@@ -489,7 +572,7 @@ async function boot() {
       ui.updatePlayer(player, G.range);
       ui.setScore(G.score); ui.setStreak(G.streak);
       ui.setWave(Math.max(1, G.wave), enemies.remaining);
-      ui.drawMinimap(player, enemies, cars);
+      ui.drawMinimap(player, enemies, cars, civ);
       ui.drawCompass(player.yaw);
       // grenade warning
       let gAng = null, gd = 9;
@@ -507,14 +590,8 @@ async function boot() {
       if (player.health < 35 && !player.dead) { G.heartbeatT -= raw; if (G.heartbeatT <= 0) { audio.heartbeat(); G.heartbeatT = 0.85; } }
     }
 
-    // car alarms
-    for (let i = alarms.length - 1; i >= 0; i--) {
-      const c = alarms[i];
-      c.userData.alarm -= dt;
-      c.userData.indMat.emissiveIntensity = (Math.floor(G.time * 3.3) % 2 && c.userData.alarm > 0) ? 4 : 0;
-      if (c.userData.alarm <= 0) { c.userData.indMat.emissiveIntensity = 0; alarms.splice(i, 1); }
-    }
-
+    carSys.update(dt);
+    if (G.state === 'menu') civ.update(dt, true);
     fx.update(dt);
     // audio listener
     audio.listener.pos.copy(camera.position);
@@ -534,7 +611,7 @@ async function boot() {
   const startMusicOnce = () => { audio.init(); if (G.state === 'menu') audio.startMusic(); kehStatus(); window.removeEventListener('pointerdown', startMusicOnce); };
   window.addEventListener('pointerdown', startMusicOnce);
   kehStatus();
-  window.__lcc = { G, player, enemies, camera, scene, deploy, startWave, fx, renderer };
+  window.__lcc = { G, player, enemies, camera, scene, deploy, startWave, fx, renderer, carSys, civ };
 }
 
 boot().catch((e) => {

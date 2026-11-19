@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { LAYOUT } from './world.js';
 
 const BASE_FOV = 72;
-const MAG = 5;
+export const WEAPONS = {
+  l115: { name: 'L115 .338 BOLT-ACTION', mag: 5, cycle: 1.05, reload: 2.4, maxZoom: 12, recoil: 0.035, hipRecoil: 0.09, bolt: true, power: 1, pierce: 0, heavy: false },
+  fifty: { name: '.50 CAL ANTI-MATERIEL', mag: 8, cycle: 0.3, reload: 2.8, maxZoom: 16, recoil: 0.06, hipRecoil: 0.14, bolt: false, power: 3, pierce: 3, heavy: true },
+};
 
 export class Player {
   constructor({ camera, vmScene, vmCamera, audio, T, canvas }) {
@@ -13,7 +16,8 @@ export class Player {
     this.ads = 0; this.adsHeld = false;
     this.zoom = 6;
     this.breath = 1; this.holdingBreath = false; this.breathLock = 0;
-    this.ammo = MAG; this.reloadT = 0; this.boltT = 0;
+    this.weapon = 'l115'; this.unlocked = { l115: true }; this.ammoBy = { l115: 5, fifty: 8 }; this.switchT = 0;
+    this.ammo = 5; this.reloadT = 0; this.boltT = 0;
     this.health = 100; this.sinceHurt = 99;
     this.keys = {};
     this.recoil = 0; this.recoilYaw = 0; this.shake = 0;
@@ -36,6 +40,7 @@ export class Player {
     const sleeve = s({ map: T.woodland, roughness: 0.95 });
     const lens = new THREE.MeshPhysicalMaterial({ color: 0x0a1a2a, roughness: 0, metalness: 0.5, clearcoat: 1, envMapIntensity: 3 });
     const rifle = this.rifle = new THREE.Group();
+    const handParts = [];
     const add = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0, parent = rifle) => {
       const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); parent.add(m); return m;
     };
@@ -81,16 +86,17 @@ export class Player {
       const m = new THREE.Mesh(g, mat);
       m.position.copy(A).add(B).multiplyScalar(0.5);
       m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), B.clone().sub(A).normalize());
-      rifle.add(m); return m;
+      rifle.add(m); handParts.push(m); return m;
     };
+    const hand = (...args) => { const m = add(...args); handParts.push(m); return m; };
     // left hand cupping the fore-end, forearm running back to the bottom-left of the screen
-    add(new THREE.BoxGeometry(0.07, 0.045, 0.11), glove, 0, -0.06, -0.42, 0.1, 0, 0);
-    add(new THREE.BoxGeometry(0.02, 0.05, 0.08), glove, 0.035, -0.035, -0.42);
+    hand(new THREE.BoxGeometry(0.07, 0.045, 0.11), glove, 0, -0.06, -0.42, 0.1, 0, 0);
+    hand(new THREE.BoxGeometry(0.02, 0.05, 0.08), glove, 0.035, -0.035, -0.42);
     limb([-0.01, -0.075, -0.38], [-0.06, -0.13, -0.27], 0.033, 0.036, glove);
     limb([-0.06, -0.13, -0.27], [-0.2, -0.32, 0.02], 0.042, 0.05, sleeve);
     // right hand on the grip
-    add(new THREE.BoxGeometry(0.06, 0.1, 0.07), glove, 0.005, -0.09, 0.13, 0.35);
-    add(new THREE.BoxGeometry(0.02, 0.02, 0.06), glove, 0.0, -0.05, 0.075);
+    hand(new THREE.BoxGeometry(0.06, 0.1, 0.07), glove, 0.005, -0.09, 0.13, 0.35);
+    hand(new THREE.BoxGeometry(0.02, 0.02, 0.06), glove, 0.0, -0.05, 0.075);
     limb([0.01, -0.13, 0.16], [0.05, -0.17, 0.27], 0.034, 0.038, glove);
     limb([0.05, -0.17, 0.27], [0.16, -0.36, 0.5], 0.046, 0.054, sleeve);
     rifle.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; } });
@@ -107,6 +113,66 @@ export class Player {
     rifle.add(this.vmFlash);
     this.vmLight = new THREE.PointLight(0xffb060, 0, 3); this.vmLight.position.set(0, 0, -1); rifle.add(this.vmLight);
     this.flashT = 0;
+    this.models = { l115: { group: rifle, muzzle: this.vmMuzzle, bolt: this.vmBolt, mag: this.vmMag, flash: this.vmFlash, light: this.vmLight } };
+
+    // ---- the .50 cal ----
+    const fifty = new THREE.Group();
+    const gun = s({ color: 0x23262a, roughness: 0.45, metalness: 0.7 });
+    const od = s({ color: 0x4a4f3a, roughness: 0.7, metalness: 0.1 });
+    const fadd = (geo, mat, x, y, z, rx = 0, ry = 0, rz = 0) => add(geo, mat, x, y, z, rx, ry, rz, fifty);
+    fadd(new THREE.BoxGeometry(0.075, 0.1, 0.55), gun, 0, -0.005, -0.02);
+    fadd(new THREE.BoxGeometry(0.08, 0.075, 0.48), od, 0, -0.01, -0.5);
+    for (let i = 0; i < 7; i++) fadd(new THREE.BoxGeometry(0.084, 0.012, 0.03), gun, 0, 0.03, -0.32 - i * 0.055);
+    fadd(cyl(0.019, 0.62), steel, 0, 0.012, -0.98);
+    fadd(new THREE.BoxGeometry(0.075, 0.055, 0.13), gun, 0, 0.012, -1.33);
+    for (const sx of [-1, 1]) for (let i = 0; i < 3; i++) fadd(new THREE.BoxGeometry(0.01, 0.035, 0.018), black, sx * 0.039, 0.012, -1.29 - i * 0.035);
+    fadd(new THREE.BoxGeometry(0.06, 0.15, 0.3), od, 0, -0.035, 0.4);
+    fadd(new THREE.BoxGeometry(0.06, 0.04, 0.2), gun, 0, 0.05, 0.38);
+    fadd(new THREE.BoxGeometry(0.066, 0.17, 0.035), black, 0, -0.04, 0.56);
+    fadd(new THREE.BoxGeometry(0.04, 0.12, 0.055), gun, 0, -0.09, 0.13, 0.35);
+    const fmag = fadd(new THREE.BoxGeometry(0.06, 0.13, 0.13), gun, 0, -0.1, -0.07);
+    fadd(cyl(0.022, 0.36), black, 0, 0.075, -0.02);
+    fadd(new THREE.CylinderGeometry(0.04, 0.023, 0.08, 24).rotateX(Math.PI / 2), black, 0, 0.075, -0.24);
+    fadd(cyl(0.04, 0.07), black, 0, 0.075, -0.3);
+    fadd(cyl(0.03, 0.07), black, 0, 0.075, 0.18);
+    fadd(new THREE.CircleGeometry(0.035, 24), lens, 0, 0.075, -0.3355, 0, Math.PI);
+    fadd(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), black, 0, 0.105, -0.02);
+    fadd(new THREE.CylinderGeometry(0.016, 0.016, 0.03, 12), black, 0.03, 0.075, -0.02, 0, 0, Math.PI / 2);
+    for (const z of [-0.12, 0.08]) fadd(new THREE.BoxGeometry(0.04, 0.05, 0.025), black, 0, 0.045, z);
+    for (const sx of [-1, 1]) fadd(new THREE.BoxGeometry(0.014, 0.014, 0.3), black, sx * 0.025, -0.06, -0.6);
+    const fbolt = new THREE.Group(); fbolt.position.set(0.04, 0.02, 0.05); fifty.add(fbolt);
+    add(new THREE.BoxGeometry(0.03, 0.02, 0.03), steel, 0.015, 0, 0, 0, 0, 0, fbolt);
+    for (const h of handParts) fifty.add(h.clone());
+    const fMuzzle = new THREE.Object3D(); fMuzzle.position.set(0, 0.012, -1.42); fifty.add(fMuzzle);
+    const fFlash = this.vmFlash.clone(); fFlash.material = this.vmFlash.material.clone(); fFlash.position.copy(fMuzzle.position); fifty.add(fFlash);
+    const fLight = new THREE.PointLight(0xffb060, 0, 3); fLight.position.set(0, 0, -1.2); fifty.add(fLight);
+    fifty.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+    fifty.visible = false;
+    this.vmCamera.add(fifty);
+    this.models.fifty = { group: fifty, muzzle: fMuzzle, bolt: fbolt, mag: fmag, flash: fFlash, light: fLight, magY: -0.1 };
+    this.models.l115.magY = -0.065;
+  }
+
+  get W() { return WEAPONS[this.weapon]; }
+
+  setModel(name) {
+    for (const k in this.models) this.models[k].group.visible = false;
+    const m = this.models[name];
+    this.rifle = m.group; this.vmMuzzle = m.muzzle; this.vmBolt = m.bolt; this.vmMag = m.mag; this.vmFlash = m.flash; this.vmLight = m.light;
+  }
+
+  switchWeapon(name) {
+    if (!this.unlocked[name] || this.weapon === name || this.switchT > 0 || this.dead) return;
+    this.ammoBy[this.weapon] = this.ammo;
+    this.switchT = 0.6; this.switchTo = name;
+    this.reloadT = 0; this.boltT = 0;
+    this.audio.dryFire();
+  }
+
+  unlock(name) {
+    this.unlocked[name] = true;
+    this.ammoBy[name] = WEAPONS[name].mag;
+    this.switchWeapon(name);
   }
 
   // ---------------- input ----------------
@@ -115,6 +181,9 @@ export class Player {
       this.keys[e.code] = true;
       if (!this.enabled) return;
       if (e.code === 'KeyR') this.startReload();
+      if (e.code === 'Digit1') this.switchWeapon('l115');
+      if (e.code === 'Digit2') this.switchWeapon('fifty');
+      if (e.code === 'KeyQ') this.switchWeapon(this.weapon === 'l115' ? 'fifty' : 'l115');
       if (e.code === 'KeyC' || e.code === 'ControlLeft') this.crouching = !this.crouching;
       if (e.code === 'Space') this.crouching = false;
     });
@@ -137,12 +206,14 @@ export class Player {
     document.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('wheel', (e) => {
       if (!this.enabled || this.ads < 0.5) return;
-      this.zoom = Math.max(3, Math.min(12, this.zoom - Math.sign(e.deltaY) * 1));
+      this.zoom = Math.max(3, Math.min(this.W.maxZoom, this.zoom - Math.sign(e.deltaY) * 1));
     }, { passive: true });
   }
 
   reset() {
-    this.health = 100; this.ammo = MAG; this.reloadT = 0; this.boltT = 0; this.dead = false;
+    this.weapon = 'l115'; this.unlocked = { l115: true }; this.ammoBy = { l115: 5, fifty: 8 }; this.switchT = 0;
+    this.setModel('l115'); this.zoom = 6;
+    this.health = 100; this.ammo = 5; this.reloadT = 0; this.boltT = 0; this.dead = false;
     this.ads = 0; this.adsHeld = false; this.crouching = false; this.crouch = 0; this.breath = 1;
     this.pos.set(0, LAYOUT.roofY, 9.7); this.yaw = 0; this.pitch = -0.16; this.sinceHurt = 99;
   }
@@ -151,10 +222,11 @@ export class Player {
 
   fire() {
     if (this.dead) return;
-    if (this.reloadT > 0 || this.boltT > 0) return;
+    if (this.reloadT > 0 || this.boltT > 0 || this.switchT > 0) return;
+    const W = this.W;
     if (this.ammo <= 0) { this.audio.dryFire(); this.startReload(); return; }
     this.ammo--;
-    this.audio.sniperShot();
+    this.audio.sniperShot(W.heavy);
     const origin = new THREE.Vector3(), dir = new THREE.Vector3();
     this.camera.getWorldPosition(origin);
     this.camera.getWorldDirection(dir);
@@ -168,19 +240,19 @@ export class Player {
     const muzzle = scoped
       ? origin.clone().add(new THREE.Vector3(0, -0.12, 0)).addScaledVector(dir, 0.8)
       : origin.clone().add(new THREE.Vector3(Math.cos(this.yaw) * 0.22, -0.2, -Math.sin(this.yaw) * 0.22)).addScaledVector(dir, 1.0);
-    this.recoil += scoped ? 0.035 : 0.09;
+    this.recoil += scoped ? W.recoil : W.hipRecoil;
     this.recoilYaw += (Math.random() - 0.5) * 0.02;
-    this.shake = 0.6;
+    this.shake = W.heavy ? 1.1 : 0.6;
     this.flashT = 0.05;
-    this.boltT = 1.05;
-    if (this.ammo > 0) this.audio.bolt(0.35);
-    if (this.onShoot) this.onShoot(origin, dir, muzzle, scoped);
+    this.boltT = W.cycle;
+    if (this.ammo > 0 && W.bolt) this.audio.bolt(0.35);
+    if (this.onShoot) this.onShoot(origin, dir, muzzle, scoped, W);
     if (this.ammo === 0) setTimeout(() => this.startReload(), 1000);
   }
 
   startReload() {
-    if (this.reloadT > 0 || this.ammo === MAG || this.dead) return;
-    this.reloadT = 2.4;
+    if (this.reloadT > 0 || this.ammo === this.W.mag || this.dead || this.switchT > 0) return;
+    this.reloadT = this.W.reload;
     this.boltT = 0;
     this.audio.reload();
   }
@@ -218,7 +290,7 @@ export class Player {
     this.pos.z = Math.max(9.42, Math.min(15.5, this.pos.z));
 
     // ADS
-    const wantAds = this.adsHeld && this.reloadT <= 0 && !this.dead && this.enabled;
+    const wantAds = this.adsHeld && this.reloadT <= 0 && this.switchT <= 0 && !this.dead && this.enabled;
     this.ads += ((wantAds ? 1 : 0) - this.ads) * Math.min(1, dt * 11);
     if (Math.abs(this.ads - (wantAds ? 1 : 0)) < 0.002) this.ads = wantAds ? 1 : 0;
     this.crouch += ((this.crouching ? 1 : 0) - this.crouch) * Math.min(1, dt * 8);
@@ -236,7 +308,17 @@ export class Player {
 
     // timers
     if (this.boltT > 0) this.boltT -= dt;
-    if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) { this.ammo = MAG; this.reloadT = 0; } }
+    if (this.reloadT > 0) { this.reloadT -= dt; if (this.reloadT <= 0) { this.ammo = this.W.mag; this.reloadT = 0; } }
+    if (this.switchT > 0) {
+      const before = this.switchT;
+      this.switchT -= dt;
+      if (before > 0.3 && this.switchT <= 0.3) {
+        this.weapon = this.switchTo; this.setModel(this.weapon);
+        this.ammo = this.ammoBy[this.weapon];
+        this.zoom = Math.min(this.zoom, this.W.maxZoom);
+      }
+      if (this.switchT < 0) this.switchT = 0;
+    }
     this.sinceHurt += dt;
     if (this.sinceHurt > 4 && this.health < 100 && !this.dead) this.health = Math.min(100, this.health + 28 * dt);
 
@@ -280,7 +362,7 @@ export class Player {
     p.y -= this.crouch * 0.01;
     // bolt cycle
     let boltSlide = 0, boltLift = 0;
-    if (this.boltT > 0) {
+    if (this.boltT > 0 && this.W.bolt) {
       const bt = 1.05 - this.boltT;
       const ph = (bt - 0.3) / 0.6;
       if (ph > 0 && ph < 1) {
@@ -292,13 +374,15 @@ export class Player {
     this.vmBolt.rotation.x = 0; this.vmBolt.rotation.z = boltLift * 1.2;
     this.vmBolt.position.z = 0.09 + boltSlide;
     // reload
+    const magY = this.models[this.weapon].magY;
+    if (this.switchT > 0) { const sw = Math.sin((this.switchT / 0.6) * Math.PI); p.y -= 0.35 * sw; rx -= 0.6 * sw; }
     if (this.reloadT > 0) {
-      const rt = 2.4 - this.reloadT, ph = rt / 2.4;
+      const R = this.W.reload, rt = R - this.reloadT, ph = rt / R;
       const s = Math.sin(Math.min(1, ph * 1.3) * Math.PI);
       rz += 0.6 * s; rx += 0.25 * s; p.y -= 0.08 * s; p.x -= 0.05 * s;
       const magOut = ph > 0.1 && ph < 0.55 ? Math.sin(((ph - 0.1) / 0.45) * Math.PI) : 0;
-      this.vmMag.position.y = -0.065 - magOut * 0.35;
-    } else this.vmMag.position.y = -0.065;
+      this.vmMag.position.y = magY - magOut * 0.35;
+    } else this.vmMag.position.y = magY;
     r.position.copy(p);
     r.rotation.set(rx, ry + 0.035 * (1 - a) + this.vmSway.x * 2 * (1 - a), rz);
     // flash

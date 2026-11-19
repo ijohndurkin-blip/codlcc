@@ -248,11 +248,12 @@ export class Enemies {
   }
 
   // ---------------- damage ----------------
-  damage(s, part, dir, point) {
+  damage(s, part, dir, point, power = 1) {
     if (!s.alive) { this.fx.blood(point, dir); return { killed: false, already: true }; }
     const headshot = part === 'head';
     let dmg = headshot ? 99 : part === 'torso' ? 1 : 0.6;
     if (s.kind === 'heavy' && part === 'torso') dmg = 1;
+    if (power >= 3) dmg = 99; // .50 cal: anything it touches goes down
     s.hp -= dmg;
     this.fx.blood(point, dir, headshot);
     this.audio.impact('flesh', point);
