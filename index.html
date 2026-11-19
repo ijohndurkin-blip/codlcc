@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Liverpool Car Centre</title>
+  <meta name="description" content="A rooftop sniper defence game set on the forecourt of Liverpool Car Centre, Brewster St, Bootle." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- ===== LOADING ===== -->
+  <div id="loading" class="screen">
+    <div class="load-title">LIVERPOOL CAR CENTRE</div>
+    <div class="load-bar"><div id="load-fill"></div></div>
+    <div id="load-text">Building Brewster Street…</div>
+  </div>
+
+  <!-- ===== MENU ===== -->
+  <div id="menu" class="screen hidden">
+    <div class="menu-left">
+      <div class="menu-kicker">OPERATION: FORECOURT</div>
+      <h1 class="menu-title">LIVERPOOL<br/>CAR CENTRE</h1>
+      <div class="menu-sub">75 A5038 · Brewster St · Bootle, Merseyside</div>
+      <div class="menu-buttons">
+        <button id="btn-deploy" class="mbtn primary">DEPLOY</button>
+        <button id="btn-record" class="mbtn">🎙 RECORD YOUR "KEH"</button>
+        <button id="btn-testkeh" class="mbtn small">▶ TEST KEH</button>
+        <button id="btn-clearkeh" class="mbtn small hidden">✕ RESET TO DEFAULT KEH</button>
+        <button id="btn-gfx" class="mbtn small">GRAPHICS: HIGH</button>
+      </div>
+      <div id="keh-status" class="keh-status">Keh voice: built-in</div>
+      <div class="menu-brief">
+        <b>BRIEFING</b><br/>
+        Iranian troops have invaded and seized Liverpool Car Centre. You're on the rooftop over the road with a bolt-action rifle.
+        Hold the line. Don't let them leave with the stock.
+      </div>
+      <div class="best">BEST SCORE <span id="best-score">0</span> · BEST WAVE <span id="best-wave">0</span></div>
+    </div>
+    <div class="menu-controls">
+      <div class="ctl-title">CONTROLS</div>
+      <div><kbd>MOUSE</kbd> Aim</div>
+      <div><kbd>LMB</kbd> Fire</div>
+      <div><kbd>RMB</kbd> (hold) Scope</div>
+      <div><kbd>WHEEL</kbd> Scope zoom</div>
+      <div><kbd>SHIFT</kbd> Hold breath (scoped) / sprint</div>
+      <div><kbd>C</kbd> / <kbd>CTRL</kbd> Crouch behind the parapet</div>
+      <div><kbd>W A S D</kbd> Move along the roof</div>
+      <div><kbd>R</kbd> Reload</div>
+      <div><kbd>ESC</kbd> Pause</div>
+      <div class="ctl-tip">TIP: Shoot the red jerry cans on their trucks. Shoot through car windows. Crouch to dodge fire &amp; reload.</div>
+    </div>
+  </div>
+
+  <!-- ===== RECORD DIALOG ===== -->
+  <div id="record" class="screen hidden">
+    <div class="rec-box">
+      <div class="rec-title">RECORD YOUR KEH</div>
+      <div class="rec-text">Hit record and say <b>"Keh"</b>. It plays every time you drop a hostile.</div>
+      <div id="rec-meter"><div id="rec-level"></div></div>
+      <div class="rec-buttons">
+        <button id="rec-go" class="mbtn primary">● RECORD (1.5s)</button>
+        <button id="rec-close" class="mbtn">DONE</button>
+      </div>
+      <div id="rec-msg"></div>
+    </div>
+  </div>
+
+  <!-- ===== HUD ===== -->
+  <div id="hud" class="hidden">
+    <div id="damage-overlay"></div>
+    <div id="dmg-indicators"></div>
+    <div id="scope" class="hidden">
+      <svg viewBox="-500 -500 1000 1000" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <radialGradient id="lens" r="0.5">
+            <stop offset="0.86" stop-color="#000" stop-opacity="0" />
+            <stop offset="0.97" stop-color="#000" stop-opacity="0.75" />
+            <stop offset="1" stop-color="#000" stop-opacity="1" />
+          </radialGradient>
+        </defs>
+        <circle r="430" fill="url(#lens)" />
+        <g stroke="#0b0b0b" fill="none">
+          <line x1="-430" y1="0" x2="-120" y2="0" stroke-width="9" />
+          <line x1="120" y1="0" x2="430" y2="0" stroke-width="9" />
+          <line x1="0" y1="120" x2="0" y2="430" stroke-width="9" />
+          <line x1="0" y1="-430" x2="0" y2="-200" stroke-width="5" />
+          <line x1="-120" y1="0" x2="120" y2="0" stroke-width="1.6" />
+          <line x1="0" y1="-200" x2="0" y2="120" stroke-width="1.6" />
+        </g>
+        <g fill="#0b0b0b" id="mildots"></g>
+        <circle r="2.6" fill="#ff2a2a" />
+      </svg>
+      <div id="scope-mask"></div>
+      <div id="scope-info"><span id="zoom-level">6.0x</span><span id="range">— m</span></div>
+      <div id="breath-wrap"><div id="breath-fill"></div><span>HOLD BREATH [SHIFT]</span></div>
+    </div>
+    <div id="crosshair"></div>
+    <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
+    <div id="keh-pop">KEH!</div>
+    <div id="points"></div>
+    <div id="hud-tl">
+      <canvas id="minimap" width="200" height="200"></canvas>
+      <div id="wave-info"><span id="wave-label">WAVE 1</span><span id="enemies-label">HOSTILES 0</span></div>
+    </div>
+    <canvas id="compass" width="460" height="38"></canvas>
+    <div id="hud-tr">
+      <div id="score">0</div>
+      <div id="score-label">SCORE</div>
+      <div id="streak"></div>
+    </div>
+    <div id="killfeed"></div>
+    <div id="hud-br">
+      <div id="weapon-name">L115 .338 BOLT-ACTION</div>
+      <div id="ammo"><span id="ammo-count">5</span><span class="ammo-sep">/</span><span class="ammo-res">∞</span></div>
+      <div id="ammo-pips"></div>
+      <div id="reload-hint" class="hidden">PRESS <kbd>R</kbd> TO RELOAD</div>
+    </div>
+    <div id="hud-bl">
+      <div id="stance">STANDING</div>
+      <div id="health-bar"><div id="health-fill"></div></div>
+    </div>
+    <div id="subtitle"></div>
+    <div id="banner"><div id="banner-main"></div><div id="banner-sub"></div></div>
+    <div id="intro-stamp"></div>
+    <div id="grenade-ind" class="hidden"><div class="gi-arrow"></div><div class="gi-icon">💣</div></div>
+  </div>
+
+  <!-- ===== PAUSE ===== -->
+  <div id="pause" class="screen hidden">
+    <div class="pause-box">
+      <div class="pause-title">PAUSED</div>
+      <button id="btn-resume" class="mbtn primary">RESUME</button>
+      <button id="btn-quit" class="mbtn">QUIT TO MENU</button>
+      <label class="sens">MOUSE SENSITIVITY <input id="sens" type="range" min="0.5" max="2.5" step="0.1" value="1" /></label>
+    </div>
+  </div>
+
+  <!-- ===== GAME OVER ===== -->
+  <div id="gameover" class="screen hidden">
+    <div class="go-box">
+      <div class="go-title">K.I.A.</div>
+      <div class="go-sub">The forecourt has fallen.</div>
+      <div class="go-stats" id="go-stats"></div>
+      <button id="btn-again" class="mbtn primary">REDEPLOY</button>
+      <button id="btn-menu" class="mbtn">MAIN MENU</button>
+    </div>
+  </div>
+
+  <div id="mobile-note" class="hidden">Best played on a desktop with a mouse &amp; keyboard.</div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
