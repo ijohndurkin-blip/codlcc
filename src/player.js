@@ -356,7 +356,10 @@ export class Player {
     let mx = 0, mz = 0;
     if (this.enabled && !this.dead) {
       if (k.KeyW) mz -= 1; if (k.KeyS) mz += 1; if (k.KeyA) mx -= 1; if (k.KeyD) mx += 1;
-      mx += this.touchMove.x; mz += this.touchMove.y;
+      // touch: while scoped the left stick becomes a slow, precise aim stick instead of walking
+      if (this.ads > 0.5) {
+        if (this.touchMove.x || this.touchMove.y) this.look(this.touchMove.x * 420 * dt, this.touchMove.y * 420 * dt, 0.0048 * this.sensitivityScale);
+      } else { mx += this.touchMove.x; mz += this.touchMove.y; }
     }
     const sprint = k.ShiftLeft && this.ads < 0.2 && !this.crouching;
     const speed = this.crouching ? 1.4 : sprint ? 4.6 : 2.7;
@@ -368,7 +371,8 @@ export class Player {
       this.moving = Math.min(1, this.moving + dt * 6);
     } else this.moving = Math.max(0, this.moving - dt * 6);
     this.pos.x = Math.max(-16, Math.min(16, this.pos.x));
-    this.pos.z = Math.max(9.42, Math.min(15.5, this.pos.z));
+    // stay near the ledge: any further back and the parapet hides the whole forecourt
+    this.pos.z = Math.max(9.42, Math.min(10.9, this.pos.z));
 
     // ADS
     const wantAds = this.adsHeld && this.reloadT <= 0 && this.switchT <= 0 && !this.dead && this.enabled;
@@ -421,7 +425,12 @@ export class Player {
 
     // camera
     const eye = THREE.MathUtils.lerp(1.72, 0.76, this.crouch) + Math.sin(this.time * 9) * 0.02 * this.moving;
-    this.camera.position.set(this.pos.x, this.pos.y + eye, this.pos.z);
+    // lean out over the parapet when aiming down, so looking down shows the road/forecourt, not the bricks
+    const down = THREE.MathUtils.clamp((-this.pitch - 0.12) / 0.45, 0, 1);
+    const leanTarget = this.crouching || this.dead ? 0 : down * (0.55 + 0.45 * this.ads);
+    this.lean = (this.lean || 0) + (leanTarget - (this.lean || 0)) * Math.min(1, dt * 7);
+    const camZ = THREE.MathUtils.lerp(this.pos.z, Math.min(this.pos.z, 9.18), this.lean);
+    this.camera.position.set(this.pos.x, this.pos.y + eye + this.lean * 0.14, camZ);
     this.camera.rotation.order = 'YXZ';
     this.camera.rotation.set(this.pitch + this.recoil + swY + (Math.random() - 0.5) * sh, this.yaw + this.recoilYaw + swX + (Math.random() - 0.5) * sh, 0);
     const fov = THREE.MathUtils.lerp(BASE_FOV - (sprint ? -6 : 0), BASE_FOV / this.zoom, Math.pow(this.ads, 2));

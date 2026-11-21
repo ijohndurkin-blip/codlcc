@@ -14,6 +14,7 @@ import { Effects } from './effects.js';
 import { AudioEngine } from './audio.js';
 import { Player, WEAPONS, ORDER } from './player.js';
 import { Enemies } from './enemies.js';
+import { SOLDIER_DETAIL } from './soldier.js';
 import { UI } from './ui.js';
 import { TouchControls } from './touch.js';
 
@@ -55,7 +56,8 @@ async function boot() {
   if (!fsSupported) document.body.classList.add('no-fs');
   await progress(5, 'Starting renderer…');
   const canvas = $('game');
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+  // phones render straight to the screen on LOW, so give the default framebuffer its own (cheap, on-tile) MSAA
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: isTouch, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -170,6 +172,7 @@ async function boot() {
   composer.addPass(grade);
 
   // ---------- graphics quality ----------
+  const G_render = { direct: false, frame: 0 };
   const QUALITY = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'];
   let quality = isTouch ? 'LOW' : 'HIGH';
   try { quality = localStorage.getItem(isTouch ? 'lcc_gfx_touch' : 'lcc_gfx') || quality; } catch (e) { /* ignore */ }
@@ -184,6 +187,20 @@ async function boot() {
     if (cloudMat.defines.OCT !== oct) { cloudMat.defines.OCT = oct; cloudMat.needsUpdate = true; }
     if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
     bloom.enabled = quality === 'HIGH' || quality === 'ULTRA';
+    // LOW = phone mode: no post-processing chain, no real-time shadows, no flash lights, cheaper paint
+    const low = quality === 'LOW';
+    G_render.direct = low;
+    SOLDIER_DETAIL.low = low;
+    sun.castShadow = !low;
+    fx.setLowPower(low);
+    scene.traverse((o) => {
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of mats) {
+        if (!m.isMeshPhysicalMaterial) continue;
+        if (m.userData.cc === undefined) m.userData.cc = m.clearcoat;
+        m.clearcoat = low ? 0 : m.userData.cc;
+      }
+    });
     gtao.enabled = quality === 'ULTRA';
     $('btn-gfx').textContent = `GRAPHICS: ${quality}`;
     try { localStorage.setItem(isTouch ? 'lcc_gfx_touch' : 'lcc_gfx', quality); } catch (e) { /* ignore */ }
@@ -658,8 +675,8 @@ async function boot() {
       ui.updatePlayer(player, G.range);
       ui.setScore(G.score); ui.setStreak(G.streak);
       ui.setWave(Math.max(1, G.wave), enemies.remaining);
-      ui.drawMinimap(player, enemies, cars, civ);
-      ui.drawCompass(player.yaw);
+      G_render.frame++;
+      if (!isTouch || G_render.frame % 3 === 0) { ui.drawMinimap(player, enemies, cars, civ); ui.drawCompass(player.yaw); }
       if (isTouch) touch.sync();
       // grenade warning
       let gAng = null, gd = 9;
@@ -689,7 +706,15 @@ async function boot() {
     grade.uniforms.slowmo.value += ((G.slowT > 0 ? 1 : 0) - grade.uniforms.slowmo.value) * Math.min(1, raw * 6);
     grade.uniforms.desat.value = grade.uniforms.slowmo.value * 0.45 + (G.state === 'playing' ? Math.max(0, (40 - player.health) / 60) : 0) + (paused ? 0.6 : 0);
     grade.uniforms.hurt.value = G.state === 'playing' ? Math.max(0, 1 - player.sinceHurt * 2) * 0.6 : 0;
-    composer.render();
+    if (G_render.direct) {
+      renderer.setRenderTarget(null);
+      renderer.autoClear = true;
+      renderer.render(scene, camera);
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      renderer.render(vmScene, vmCamera);
+      renderer.autoClear = true;
+    } else composer.render();
   }
 
   screens('menu');

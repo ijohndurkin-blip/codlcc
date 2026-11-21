@@ -33,7 +33,7 @@ phone sideways.
 | Left thumb (drag anywhere on the left) | Walk the rooftop |
 | Right thumb (drag anywhere on the right) | Aim |
 | FIRE | Shoot (keep your thumb on it and drag to aim as well) |
-| SCOPE | Scope in / out |
+| SCOPE | Scope in / out (while scoped, the left stick does fine aiming instead of walking) |
 | + / − and HOLD BREATH | Zoom and steady your aim (only shown while scoped) |
 | CROUCH, R, SWAP | Duck behind the parapet, reload, change rifle |
 | ❚❚ / ⛶ | Pause / full screen |
@@ -135,7 +135,8 @@ Every car can be wrecked, including the four on display inside the showroom:
 
 **GRAPHICS** on the main menu cycles through these:
 
-- **LOW** (default on phones): reduced resolution, 1K shadows, simpler clouds, no bloom.
+- **LOW** (default on phones): renders straight to the screen with no post-processing, no real-time
+  shadows, no flash lights, simpler car paint, clouds and soldiers, and half the particles.
 - **MEDIUM**: 1x resolution, 2K shadows, no bloom. For laptops and integrated GPUs.
 - **HIGH** (default): up to 1.5x resolution, 4K shadows, bloom.
 - **ULTRA**: up to 2x resolution plus GTAO ambient occlusion.

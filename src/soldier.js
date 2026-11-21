@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { groundHeight } from './world.js';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+
+// phones: skip tiny details on newly spawned soldiers
+export const SOLDIER_DETAIL = { low: false };
 
 let M = null;
 const HIT_MAT = new THREE.MeshBasicMaterial({ visible: false });
@@ -100,11 +104,11 @@ export class Soldier {
     const spine = this.spine = grp(hips, 0, 0.08, 0);
     mk(g.torso, camo, spine, 0, 0.27, 0, 'torso');
     mk(g.vest, heavy ? m.vestHeavy : m.vest, spine, 0, 0.28, 0, 'torso');
-    mk(g.pouch, m.pouch, spine, 0, 0.2, 0.17, 'torso').scale.set(3, 1, 1);
+    if (!SOLDIER_DETAIL.low) mk(g.pouch, m.pouch, spine, 0, 0.2, 0.17, 'torso').scale.set(3, 1, 1);
     mk(g.torsoHit, HIT_MAT, spine, 0, 0.27, 0, 'torso');
 
     const neck = this.neck = grp(spine, 0, 0.55, 0);
-    mk(g.scarf, m.scarf, neck, 0, 0.0, 0, 'head');
+    if (!SOLDIER_DETAIL.low) mk(g.scarf, m.scarf, neck, 0, 0.0, 0, 'head');
     const head = mk(g.head, skin, neck, 0, 0.13, 0.01, 'head');
     if (kind === 'sniper') {
       mk(g.boonie, m.camo, neck, 0, 0.21, 0, 'head');
@@ -118,10 +122,10 @@ export class Soldier {
     const arm = (side) => {
       const sh = grp(spine, side * 0.25, 0.48, 0, 'ZYX');
       mk(g.upper, camo, sh, 0, -0.14, 0, 'limb');
-      if (side > 0) { const p = mk(g.patch, m.flag, sh, 0.063, -0.08, 0, 'limb'); p.rotation.y = Math.PI / 2; }
+      if (side > 0 && !SOLDIER_DETAIL.low) { const p = mk(g.patch, m.flag, sh, 0.063, -0.08, 0, 'limb'); p.rotation.y = Math.PI / 2; }
       const el = grp(sh, 0, -0.29, 0);
       mk(g.fore, camo, el, 0, -0.13, 0, 'limb');
-      mk(g.hand, m.glove, el, 0, -0.28, 0, 'limb');
+      if (!SOLDIER_DETAIL.low) mk(g.hand, m.glove, el, 0, -0.28, 0, 'limb');
       return { sh, el };
     };
     const L = arm(1), R = arm(-1);
@@ -148,6 +152,24 @@ export class Soldier {
     if (kind === 'sniper') gm(g.scope, m.gunMetal, 0, 0.08, 0.1);
     else gm(g.mag, m.gunMetal, 0, -0.11, 0.12, 0.35);
     if (heavy) { const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.08, 12), m.gunMetal); drum.rotation.z = Math.PI / 2; drum.position.set(0, -0.1, 0.1); drum.raycast = noRay; gun.add(drum); }
+    // collapse the rifle into one mesh per material (5-6 draw calls -> 2)
+    {
+      const byMat = new Map();
+      for (const c of [...gun.children]) {
+        if (!c.isMesh) continue;
+        c.updateMatrix();
+        let geo = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+        for (const k of Object.keys(geo.attributes)) if (!['position', 'normal', 'uv'].includes(k)) geo.deleteAttribute(k);
+        geo.applyMatrix4(c.matrix);
+        if (!byMat.has(c.material)) byMat.set(c.material, []);
+        byMat.get(c.material).push(geo);
+        gun.remove(c);
+      }
+      for (const [mat, list] of byMat) {
+        const mm = new THREE.Mesh(mergeGeometries(list), mat);
+        mm.castShadow = true; mm.raycast = noRay; gun.add(mm);
+      }
+    }
     this.muzzle = grp(gun, 0, 0.02, kind === 'sniper' ? 0.92 : 0.66);
 
     if (kind === 'sniper') {

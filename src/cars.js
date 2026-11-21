@@ -150,6 +150,7 @@ export function makeCar(type = 'hatch', color = 0x1d1f22, opts = {}) {
   const glass = mk(g.glass, S.glass, 'glass', false);
   const trimMesh = mk(mergeGeometries(trimG), S.trim, 'trim');
   const indMesh = mk(mergeGeometries(indG), indMat, 'body', false);
+  indMesh.visible = false; // only drawn while the alarm is flashing
 
   // windscreen price sticker + roof A-board are drawn instanced by CarSystem
   let sticker = null, sign = null;
@@ -285,7 +286,7 @@ export class CarSystem {
   alarm(car, chance) {
     const u = car.userData;
     if (u.destroyed || u.alarm > 0 || Math.random() > chance) return;
-    u.alarm = 7; this.alarms.push(car);
+    u.alarm = 7; this.alarms.push(car); u.indMesh.visible = true;
     this.audio.carAlarm(car.position, 7);
   }
 
@@ -387,7 +388,7 @@ export class CarSystem {
       const c = this.alarms[i], u = c.userData;
       u.alarm -= dt;
       u.indMat.emissiveIntensity = (Math.floor(this.time * 3.3) % 2 && u.alarm > 0) ? 4 : 0;
-      if (u.alarm <= 0) { u.indMat.emissiveIntensity = 0; this.alarms.splice(i, 1); }
+      if (u.alarm <= 0) { u.indMat.emissiveIntensity = 0; u.indMesh.visible = false; this.alarms.splice(i, 1); }
     }
     for (const car of this.all) {
       const u = car.userData;
@@ -451,7 +452,7 @@ export class CarSystem {
       this.fx.detachDecals(car);
       car.position.copy(u.orig.pos); car.rotation.set(0, u.orig.rotY, 0);
       u.paintMesh.material = u.paintMat; u.trimMesh.material = S.trim;
-      u.glass.material = S.glass; u.glass.visible = true; u.indMesh.visible = true;
+      u.glass.material = S.glass; u.glass.visible = true; u.indMesh.visible = false;
       u.indMat.emissiveIntensity = 0;
       Object.assign(u, { hp: 10, glassHits: 0, tyres: {}, tilt: { pitch: 0, roll: 0, drop: 0 }, destroyed: false, flying: null, settle: null, alarm: 0, smoke: null, fire: null, driven: false });
       if (u.sign) u.sign.off = false;

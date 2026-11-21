@@ -16,6 +16,7 @@ export class Effects {
     this.add = this.makePool(260, THREE.AdditiveBlending);
     this.norm = this.makePool(380, THREE.NormalBlending);
     this.emitters = [];
+    this.density = 1;
 
     // tracers
     this.tracers = [];
@@ -59,6 +60,7 @@ export class Effects {
   }
 
   spawn(pool, o) {
+    if (this.density < 1 && Math.random() > this.density) return null;
     let p = null;
     for (let k = 0; k < pool.length; k++) {
       const c = pool[(pool.next + k) % pool.length];
@@ -83,7 +85,15 @@ export class Effects {
     return p;
   }
 
+  // cheap mode for phones: no dynamic point lights (each one costs every lit pixel), fewer particles
+  setLowPower(on) {
+    this.density = on ? 0.45 : 1;
+    for (const L of this.lights) { L.light.visible = !on; L.light.intensity = 0; L.life = L.max; }
+    this.lightsOn = !on;
+  }
+
   flashLight(pos, intensity, life, color = 0xffb060, dist = 30) {
+    if (this.lightsOn === false) return;
     const L = this.lights[this.lightIdx++ % this.lights.length];
     L.light.position.copy(pos); L.light.color.set(color); L.light.distance = dist;
     L.peak = intensity; L.life = 0; L.max = life; L.light.intensity = intensity;
