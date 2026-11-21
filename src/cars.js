@@ -142,6 +142,7 @@ export function makeCar(type = 'hatch', color = 0x1d1f22, opts = {}) {
   trimG.push(prep(new THREE.BoxGeometry(0.03, 0.11, 0.52), M4(-L2, p.beltY - 0.4, 0), 0xf2c418));
 
   const indMat = new THREE.MeshStandardMaterial({ color: 0xff8a1a, emissive: 0xff7a00, emissiveIntensity: 0, roughness: 0.3 });
+  indMat.userData.keepPBR = true; // flashes at runtime, keep the original
   const mk = (geo, mat, part, cast = true) => {
     const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = true;
     m.userData.carPart = part; car.add(m); return m;

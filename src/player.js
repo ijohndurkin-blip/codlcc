@@ -222,8 +222,8 @@ export class Player {
     const zoomScale = 1 - this.ads * (1 - 1 / this.zoom) * 0.92;
     this.yaw -= dx * sens * zoomScale; this.pitch -= dy * sens * zoomScale;
     this.pitch = Math.max(-1.3, Math.min(1.0, this.pitch));
-    this.vmSway.x = Math.max(-0.04, Math.min(0.04, this.vmSway.x - dx * 0.00012));
-    this.vmSway.y = Math.max(-0.04, Math.min(0.04, this.vmSway.y + dy * 0.00012));
+    this.vmSway.x = Math.max(-0.06, Math.min(0.06, this.vmSway.x - dx * 0.00035));
+    this.vmSway.y = Math.max(-0.05, Math.min(0.05, this.vmSway.y + dy * 0.00028));
   }
 
   cycleWeapon() {
@@ -370,6 +370,9 @@ export class Player {
       this.pos.z += (-mx * s + mz * c) * speed * dt;
       this.moving = Math.min(1, this.moving + dt * 6);
     } else this.moving = Math.max(0, this.moving - dt * 6);
+    const ks = Math.min(1, dt * 8);
+    this.strafe = (this.strafe || 0) + ((mx || 0) - (this.strafe || 0)) * ks;
+    this.fwd = (this.fwd || 0) + ((mz || 0) - (this.fwd || 0)) * ks;
     this.pos.x = Math.max(-16, Math.min(16, this.pos.x));
     // stay near the ledge: any further back and the parapet hides the whole forecourt
     this.pos.z = Math.max(9.42, Math.min(10.9, this.pos.z));
@@ -444,9 +447,12 @@ export class Player {
     this.vmSway.multiplyScalar(Math.max(0, 1 - dt * 8));
     const hip = new THREE.Vector3(0.235, -0.235, -0.56), adsP = new THREE.Vector3(0, -0.075, -0.24);
     const p = hip.lerp(adsP, a);
-    const bobA = (1 - a * 0.9) * this.moving * (sprint ? 2 : 1);
-    p.x += Math.sin(t * 8) * 0.01 * bobA + this.vmSway.x * (1 - a);
-    p.y += Math.abs(Math.cos(t * 8)) * 0.012 * bobA + Math.sin(t * 1.6) * 0.003 * (1 - a) + this.vmSway.y * (1 - a);
+    // carried, not glued to the screen: walking bob, strafe tilt, look lag
+    const bobA = (1 - a * 0.9) * this.moving * (sprint ? 1.8 : 1);
+    const st = this.strafe || 0, fw = this.fwd || 0;
+    p.x += Math.sin(t * 7) * 0.022 * bobA + this.vmSway.x * (1 - a) - st * 0.03 * (1 - a);
+    p.y += -Math.abs(Math.cos(t * 7)) * 0.022 * bobA + Math.sin(t * 1.6) * 0.004 * (1 - a) + this.vmSway.y * (1 - a) - Math.abs(fw) * 0.012 * (1 - a);
+    p.z += fw * 0.025 * (1 - a);
     p.z += this.recoil * 1.2;
     let rx = this.recoil * 2.2, ry = sprint ? 0.6 : 0, rz = sprint ? 0.3 : 0;
     p.y -= this.crouch * 0.01;
@@ -474,7 +480,9 @@ export class Player {
       this.vmMag.position.y = magY - magOut * 0.35;
     } else this.vmMag.position.y = magY;
     r.position.copy(p);
-    r.rotation.set(rx, ry + 0.035 * (1 - a) + this.vmSway.x * 2 * (1 - a), rz);
+    rx += (this.vmSway.y * 2.5 + Math.sin(t * 14) * 0.012 * bobA) * (1 - a);
+    rz += (-st * 0.14 + Math.sin(t * 7) * 0.03 * bobA) * (1 - a);
+    r.rotation.set(rx, ry + 0.035 * (1 - a) + this.vmSway.x * 3 * (1 - a), rz);
     // flash
     if (this.flashT > 0) {
       this.flashT -= dt;

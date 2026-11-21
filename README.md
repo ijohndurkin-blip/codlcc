@@ -136,7 +136,10 @@ Every car can be wrecked, including the four on display inside the showroom:
 **GRAPHICS** on the main menu cycles through these:
 
 - **LOW** (default on phones): renders straight to the screen with no post-processing, no real-time
-  shadows, no flash lights, simpler car paint, clouds and soldiers, and half the particles.
+  shadows and no flash lights. It uses cheap matte/gloss materials instead of physically based ones,
+  bakes the sky and clouds once, uses simpler soldiers and half the particles, and drops the resolution a
+  little. Phones also get lighter audio: a bigger audio buffer, an echo instead of convolution reverb, and a
+  limit on how many sounds can play at once.
 - **MEDIUM**: 1x resolution, 2K shadows, no bloom. For laptops and integrated GPUs.
 - **HIGH** (default): up to 1.5x resolution, 4K shadows, bloom.
 - **ULTRA**: up to 2x resolution plus GTAO ambient occlusion.

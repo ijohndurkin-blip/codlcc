@@ -15,6 +15,7 @@ import { AudioEngine } from './audio.js';
 import { Player, WEAPONS, ORDER } from './player.js';
 import { Enemies } from './enemies.js';
 import { SOLDIER_DETAIL } from './soldier.js';
+import { applyLowMaterials } from './lowmat.js';
 import { UI } from './ui.js';
 import { TouchControls } from './touch.js';
 
@@ -143,6 +144,7 @@ async function boot() {
   await progress(78, 'Briefing the troops…');
   const fx = new Effects(scene);
   const audio = new AudioEngine();
+  audio.lowPower = isTouch;
   const carSys = new CarSystem(scene, T, fx, audio);
   const carGroup = carSys.group, cars = carSys.cars;
   const ui = new UI();
@@ -172,14 +174,27 @@ async function boot() {
   composer.addPass(grade);
 
   // ---------- graphics quality ----------
-  const G_render = { direct: false, frame: 0 };
+  const G_render = { direct: false, frame: 0, matT: 0 };
+  let skyCube = null;
+  function bakeSky() {
+    if (skyCube) return skyCube;
+    const rt = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
+    const cc = new THREE.CubeCamera(1, 5000, rt);
+    const bake = new THREE.Scene();
+    sky.visible = true; clouds.visible = true;
+    bake.add(sky, clouds);
+    cc.update(renderer, bake);
+    scene.add(sky, clouds);
+    skyCube = rt.texture;
+    return skyCube;
+  }
   const QUALITY = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'];
   let quality = isTouch ? 'LOW' : 'HIGH';
   try { quality = localStorage.getItem(isTouch ? 'lcc_gfx_touch' : 'lcc_gfx') || quality; } catch (e) { /* ignore */ }
   if (!QUALITY.includes(quality)) quality = 'HIGH';
   function applyQuality() {
     const dpr = window.devicePixelRatio;
-    const pr = quality === 'LOW' ? Math.min(dpr, 1) * (isTouch ? 0.85 : 1) : quality === 'MEDIUM' ? Math.min(dpr, isTouch ? 1.25 : 1) : quality === 'HIGH' ? Math.min(dpr, 1.5) : Math.min(dpr, 2);
+    const pr = quality === 'LOW' ? Math.min(dpr, 1) * (isTouch ? 0.75 : 1) : quality === 'MEDIUM' ? Math.min(dpr, isTouch ? 1.25 : 1) : quality === 'HIGH' ? Math.min(dpr, 1.5) : Math.min(dpr, 2);
     renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
     renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
     const sm = quality === 'LOW' ? 1024 : quality === 'MEDIUM' ? 2048 : 4096;
@@ -190,6 +205,11 @@ async function boot() {
     // LOW = phone mode: no post-processing chain, no real-time shadows, no flash lights, cheaper paint
     const low = quality === 'LOW';
     G_render.direct = low;
+    applyLowMaterials(scene, low);
+    applyLowMaterials(vmScene, low);
+    // LOW: bake sky + clouds into a cube map once instead of shading them every frame
+    if (low) { scene.background = bakeSky(); sky.visible = false; clouds.visible = false; }
+    else { scene.background = null; sky.visible = true; clouds.visible = true; }
     SOLDIER_DETAIL.low = low;
     sun.castShadow = !low;
     fx.setLowPower(low);
@@ -707,6 +727,9 @@ async function boot() {
     grade.uniforms.desat.value = grade.uniforms.slowmo.value * 0.45 + (G.state === 'playing' ? Math.max(0, (40 - player.health) / 60) : 0) + (paused ? 0.6 : 0);
     grade.uniforms.hurt.value = G.state === 'playing' ? Math.max(0, 1 - player.sinceHurt * 2) * 0.6 : 0;
     if (G_render.direct) {
+      // new soldiers / cars / swapped materials pick up the cheap materials too
+      G_render.matT -= raw;
+      if (G_render.matT <= 0) { G_render.matT = 1; applyLowMaterials(scene, true); }
       renderer.setRenderTarget(null);
       renderer.autoClear = true;
       renderer.render(scene, camera);

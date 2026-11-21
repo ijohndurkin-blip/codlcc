@@ -8,22 +8,48 @@ export class AudioEngine {
     this.kehBuffer = null;
     this.listener = { pos: new THREE.Vector3(), right: new THREE.Vector3(1, 0, 0) };
     this.music = null;
+    this.lowPower = false;   // phones: bigger buffer, cheap reverb, voice limiting
+    this.voices = 0;
+    this.lastCat = {};
+  }
+
+  // true if a low-priority sound of this category should be skipped right now
+  skip(cat, gap) {
+    if (!this.lowPower) return false;
+    const t = this.ctx.currentTime;
+    if (this.voices > 34 || t - (this.lastCat[cat] || -1) < gap) return true;
+    this.lastCat[cat] = t;
+    return false;
   }
 
   init() {
     if (this.ctx) { if (this.ctx.state === 'suspended') this.ctx.resume(); return; }
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
-    const ctx = this.ctx = new AC();
+    let ctx;
+    try { ctx = this.ctx = new AC(this.lowPower ? { latencyHint: 'playback' } : undefined); } catch (e) { ctx = this.ctx = new AC(); }
     this.master = ctx.createGain(); this.master.gain.value = 0.8;
     const comp = ctx.createDynamicsCompressor();
     comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
     this.master.connect(comp); comp.connect(ctx.destination);
-    // reverb
-    this.reverb = ctx.createConvolver();
-    this.reverb.buffer = this.impulse(2.8, 2.6);
+    // reverb: convolution on desktop, a cheap two-tap echo network on phones
     this.reverbGain = ctx.createGain(); this.reverbGain.gain.value = 0.55;
-    this.reverb.connect(this.reverbGain); this.reverbGain.connect(this.master);
+    if (this.lowPower) {
+      this.reverb = ctx.createGain();
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2200;
+      this.reverb.connect(lp);
+      for (const [dt, fb] of [[0.071, 0.42], [0.113, 0.36], [0.173, 0.3]]) {
+        const d = ctx.createDelay(1); d.delayTime.value = dt;
+        const g = ctx.createGain(); g.gain.value = fb;
+        lp.connect(d); d.connect(g); g.connect(d); d.connect(this.reverbGain);
+      }
+      this.reverbGain.gain.value = 0.35;
+    } else {
+      this.reverb = ctx.createConvolver();
+      this.reverb.buffer = this.impulse(2.8, 2.6);
+      this.reverb.connect(this.reverbGain);
+    }
+    this.reverbGain.connect(this.master);
     // white noise buffer
     const len = ctx.sampleRate * 2;
     this.noise = ctx.createBuffer(1, len, ctx.sampleRate);
@@ -70,7 +96,8 @@ export class AudioEngine {
     g.gain.linearRampToValueAtTime(gain, t + attack);
     g.gain.setTargetAtTime(0.0001, t + attack, dur / curve);
     src.connect(f); f.connect(g); g.connect(dest);
-    src.start(t, Math.random() * 1.5); src.stop(t + dur + 0.5);
+    this.voices++; src.onended = () => { this.voices--; };
+    src.start(t, Math.random() * 1.5); src.stop(t + (this.lowPower ? dur * 1.6 + 0.05 : dur + 0.5));
   }
 
   tone(dest, t, dur, { type = 'sine', freq = 440, freqEnd = null, gain = 0.5, attack = 0.003 } = {}) {
@@ -83,6 +110,7 @@ export class AudioEngine {
     g.gain.linearRampToValueAtTime(gain, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g); g.connect(dest);
+    this.voices++; o.onended = () => { this.voices--; };
     o.start(t); o.stop(t + dur + 0.05);
   }
 
@@ -140,23 +168,24 @@ export class AudioEngine {
   dryFire() { if (!this.ctx) return; const t = this.ctx.currentTime; this.click(this.out(0.2, 0), t, 2800, 0.5); }
 
   enemyShot(pos, heavy = false) {
-    if (!this.ctx) return;
+    if (!this.ctx || this.skip('enemy', 0.055)) return;
     const s = this.spatial(pos), t = this.ctx.currentTime + s.dist / 343;
     const o = this.out(s.pan, 0.7);
     const g = s.gain * (heavy ? 0.9 : 0.75);
     this.noiseBurst(o, t, 0.06, { type: 'bandpass', freq: 2200, q: 0.8, gain: g * 1.1 });
-    this.noiseBurst(o, t, 0.25, { type: 'lowpass', freq: 700, freqEnd: 150, gain: g * 0.9 });
+    if (!this.lowPower) this.noiseBurst(o, t, 0.25, { type: 'lowpass', freq: 700, freqEnd: 150, gain: g * 0.9 });
+    else this.tone(o, t, 0.2, { freq: 120, freqEnd: 50, gain: g * 0.6 });
   }
 
   whiz(pan = 0) {
-    if (!this.ctx) return;
+    if (!this.ctx || this.skip('whiz', 0.12)) return;
     const t = this.ctx.currentTime, o = this.out(pan, 0.1);
     this.noiseBurst(o, t, 0.13, { type: 'bandpass', freq: 5200, freqEnd: 1800, q: 4, gain: 0.5, attack: 0.03, curve: 2 });
     this.noiseBurst(o, t, 0.02, { type: 'highpass', freq: 3000, gain: 0.5 });
   }
 
   impact(kind, pos) {
-    if (!this.ctx) return;
+    if (!this.ctx || this.skip('impact-' + kind, 0.04)) return;
     const s = this.spatial(pos), t = this.ctx.currentTime + s.dist / 343, o = this.out(s.pan, 0.4);
     const g = Math.min(1, s.gain * 2.2);
     if (kind === 'metal') {
@@ -164,7 +193,7 @@ export class AudioEngine {
       this.tone(o, t, 0.25, { freq: 3100 + Math.random() * 600, gain: 0.08 * g });
       this.noiseBurst(o, t, 0.05, { type: 'highpass', freq: 2500, gain: 0.5 * g });
     } else if (kind === 'glass') {
-      for (let i = 0; i < 14; i++) this.tone(o, t + Math.random() * 0.45, 0.05 + Math.random() * 0.1, { freq: 3000 + Math.random() * 5000, gain: 0.1 * g });
+      for (let i = 0; i < (this.lowPower ? 5 : 14); i++) this.tone(o, t + Math.random() * 0.45, 0.05 + Math.random() * 0.1, { freq: 3000 + Math.random() * 5000, gain: 0.1 * g });
       this.noiseBurst(o, t, 0.4, { type: 'highpass', freq: 4000, gain: 0.6 * g });
     } else if (kind === 'flesh') {
       this.noiseBurst(o, t, 0.12, { type: 'lowpass', freq: 500, gain: 0.9 * g });
@@ -259,8 +288,11 @@ export class AudioEngine {
     osc.connect(f); osc2.connect(f); f.connect(g);
     if (p) { g.connect(p); p.connect(this.master); } else g.connect(this.master);
     osc.start(); osc2.start();
+    const last = {};
     return {
       set: (pos, rpm) => {
+        if (ctx.currentTime - (last.t || 0) < 0.1) return;
+        last.t = ctx.currentTime;
         const s = this.spatial(pos);
         g.gain.setTargetAtTime(0.35 * s.gain, ctx.currentTime, 0.1);
         if (p) p.pan.setTargetAtTime(s.pan, ctx.currentTime, 0.1);
@@ -432,8 +464,11 @@ export class AudioEngine {
     src.connect(f); f.connect(f2); f2.connect(g);
     if (p) { g.connect(p); p.connect(this.master); } else g.connect(this.master);
     src.start();
+    const last = {};
     return {
       set: (pos, on) => {
+        if (ctx.currentTime - (last.t || 0) < 0.1 && on === last.on) return;
+        last.t = ctx.currentTime; last.on = on;
         const s = this.spatial(pos);
         g.gain.setTargetAtTime(on ? 0.22 * s.gain : 0, ctx.currentTime, 0.15);
         if (p) p.pan.setTargetAtTime(s.pan, ctx.currentTime, 0.1);
