@@ -8,7 +8,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { Sky } from 'three/examples/jsm/objects/Sky.js';
 import { buildTextures, setAnisotropy } from './textures.js';
 import { buildWorld, LAYOUT } from './world.js';
-import { CarSystem } from './cars.js';
+import { CarSystem, CAR_DETAIL } from './cars.js';
 import { Civilians } from './civilians.js';
 import { Effects } from './effects.js';
 import { AudioEngine } from './audio.js';
@@ -145,12 +145,25 @@ async function boot() {
   const fx = new Effects(scene);
   const audio = new AudioEngine();
   audio.lowPower = isTouch;
+  CAR_DETAIL.low = isTouch;
   const carSys = new CarSystem(scene, T, fx, audio);
   const carGroup = carSys.group, cars = carSys.cars;
   const ui = new UI();
   const player = new Player({ camera, vmScene, vmCamera, audio, T, canvas });
   const enemies = new Enemies({ scene, T, audio, effects: fx, cars, player });
   const civ = new Civilians({ scene, world, carSys, audio, enemies, fx });
+
+  // reflections: capture the actual surroundings (showroom, brick building, street, sky) from the middle
+  // of the forecourt into the environment map, so car paint and glass reflect the scene, not just sky.
+  // (fromScene always captures from the origin, so shift the scene to put the forecourt there.)
+  {
+    scene.position.set(0, -1.6, 17); scene.updateMatrixWorld(true);
+    const envRT = pmrem.fromScene(scene, 0.015, 0.1, 3000);
+    scene.position.set(0, 0, 0); scene.updateMatrixWorld(true);
+    scene.environment = envRT.texture;
+    vmScene.environment = envRT.texture;
+    scene.environmentIntensity = 0.75;
+  }
   // nobody takes cover where the valeter is washing the Corsa
   enemies.covers = enemies.covers.filter((c) => !(c.z === LAYOUT.lanes.a3 && c.x < -23.8));
 

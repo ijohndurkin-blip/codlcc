@@ -56,9 +56,9 @@ export function buildWorld(scene, T, renderer) {
 
   const std = (o) => new THREE.MeshStandardMaterial(o);
   const M = {
-    asphalt: std({ map: T.asphalt, normalMap: T.asphaltN, roughness: 0.92, color: 0xffffff }),
+    asphalt: std({ map: T.asphalt, normalMap: T.asphaltN, roughnessMap: T.asphalt, roughness: 2.3, color: 0xffffff }),
     redTarmac: std({ map: T.asphalt, normalMap: T.asphaltN, roughness: 0.9, color: 0xc0675a }),
-    tarmac: std({ map: T.tarmac, normalMap: T.tarmacN, roughness: 0.85 }),
+    tarmac: std({ map: T.tarmac, normalMap: T.tarmacN, roughnessMap: T.tarmac, roughness: 2.0 }),
     paving: std({ map: T.paving, normalMap: T.pavingN, roughness: 0.9 }),
     kerb: std({ map: T.concrete, normalMap: T.concreteN, roughness: 0.85, color: 0xd8d4cc }),
     brick: std({ map: T.brick, normalMap: T.brickN, roughness: 0.9 }),
