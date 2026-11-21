@@ -296,7 +296,21 @@ export class Civilians {
     if (this.mech.paper) this.mech.paper.visible = false;
   }
 
-  get eventRunning() { return this.kevState !== 'away' || this.mechState !== 'away'; }
+  // a dead Kev doesn't block the next visitor (his BMW just stays parked at the kerb)
+  get eventRunning() { return (this.kevState !== 'away' && this.kevState !== 'dead') || this.mechState !== 'away'; }
+
+  // called by the game whenever one of the cast goes down
+  personKilled(p) {
+    if (p !== this.kev) return;
+    if (this.bmw && !this.bmw.userData.destroyed && !this.bmw.userData.flying) this.kerbCars.add(this.bmw);
+    this.kevState = 'dead';
+    // somebody has to sort Kev's paperwork out: call Merton Garages
+    if (this.mechState === 'away') {
+      this.nextEvent = 'mech';
+      this.eventT = 6;
+      setTimeout(() => this.say('HQ', 'Kev Jones is down. Craig\'s on the phone to Merton Garages — they\'re sending someone.', 3600), 1800);
+    }
+  }
 
   eventDone(which) {
     this.nextEvent = which === 'kev' ? 'mech' : 'kev';
@@ -306,7 +320,11 @@ export class Civilians {
   onWaveStart() {
     if (!this.craig.alive) { this.craig.revive(-8.8, 0.2, -33.6); this.craigState = 'inside'; this.craigT = 10 + Math.random() * 8; }
     if (!this.val.alive) { const sp = this.valSpots[1]; this.val.revive(sp.x, 0.13, sp.z); this.valState = 'wash'; this.valT = 5; this.valSpot = 1; }
-    if (this.kevState !== 'away' && (!this.kev.alive || this.kevState === 'dead')) { this.removeKev(); this.eventDone('kev'); }
+    if (this.kevState !== 'away' && (!this.kev.alive || this.kevState === 'dead')) {
+      const mechBusy = this.mechState !== 'away';
+      this.removeKev();
+      if (!mechBusy) this.eventDone('kev');
+    }
     if (this.mechState !== 'away' && (!this.mech.alive || this.mechState === 'dead')) {
       // if he died mid-MOT, leave the car where it ended up
       if (this.motCar) { this.motCar.userData.driven = false; this.motCar = null; }
@@ -471,6 +489,7 @@ export class Civilians {
 
   // ---------------- Kev Jones ----------------
   spawnBmw() {
+    if (this.bmw) this.removeKev();
     const b = this.bmw = makeCar('saloon', 0xa9cbe8, { plain: true, kidney: true });
     b.position.set(-160, 0, KERB); b.rotation.y = 0;
     this.carSys.addDynamic(b);

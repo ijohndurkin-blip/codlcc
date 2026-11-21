@@ -31,6 +31,8 @@ export class Player {
     this.enabled = false; this.dead = false;
     this.onShoot = null; this.onHurt = null;
     this.sensitivity = 0.0022;
+    this.sensitivityScale = 1;
+    this.touchMove = { x: 0, y: 0 };
     this.buildViewmodel(T);
     this.bindInput();
   }
@@ -214,6 +216,21 @@ export class Player {
 
   get W() { return WEAPONS[this.weapon]; }
 
+  // mouse or touch-drag aiming (dx, dy in pixels)
+  look(dx, dy, sens) {
+    if (!this.enabled) return;
+    const zoomScale = 1 - this.ads * (1 - 1 / this.zoom) * 0.92;
+    this.yaw -= dx * sens * zoomScale; this.pitch -= dy * sens * zoomScale;
+    this.pitch = Math.max(-1.3, Math.min(1.0, this.pitch));
+    this.vmSway.x = Math.max(-0.04, Math.min(0.04, this.vmSway.x - dx * 0.00012));
+    this.vmSway.y = Math.max(-0.04, Math.min(0.04, this.vmSway.y + dy * 0.00012));
+  }
+
+  cycleWeapon() {
+    const have = ORDER.filter((k) => this.unlocked[k]);
+    this.switchWeapon(have[(have.indexOf(this.weapon) + 1) % have.length]);
+  }
+
   setModel(name) {
     for (const k in this.models) this.models[k].group.visible = false;
     const m = this.models[name];
@@ -251,22 +268,14 @@ export class Player {
       if (e.code === 'KeyR') this.startReload();
       const dig = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5'].indexOf(e.code);
       if (dig >= 0) this.switchWeapon(ORDER[dig]);
-      if (e.code === 'KeyQ') {
-        const have = ORDER.filter((k) => this.unlocked[k]);
-        this.switchWeapon(have[(have.indexOf(this.weapon) + 1) % have.length]);
-      }
+      if (e.code === 'KeyQ') this.cycleWeapon();
       if (e.code === 'KeyC' || e.code === 'ControlLeft') this.crouching = !this.crouching;
       if (e.code === 'Space') this.crouching = false;
     });
     window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
     document.addEventListener('mousemove', (e) => {
       if (!this.enabled || document.pointerLockElement !== this.canvas) return;
-      const zoomScale = 1 - this.ads * (1 - 1 / this.zoom) * 0.92;
-      const sx = e.movementX * this.sensitivity * zoomScale, sy = e.movementY * this.sensitivity * zoomScale;
-      this.yaw -= sx; this.pitch -= sy;
-      this.pitch = Math.max(-1.3, Math.min(1.0, this.pitch));
-      this.vmSway.x = Math.max(-0.04, Math.min(0.04, this.vmSway.x - e.movementX * 0.00012));
-      this.vmSway.y = Math.max(-0.04, Math.min(0.04, this.vmSway.y + e.movementY * 0.00012));
+      this.look(e.movementX, e.movementY, this.sensitivity);
     });
     document.addEventListener('mousedown', (e) => {
       if (!this.enabled || document.pointerLockElement !== this.canvas) return;
@@ -347,11 +356,12 @@ export class Player {
     let mx = 0, mz = 0;
     if (this.enabled && !this.dead) {
       if (k.KeyW) mz -= 1; if (k.KeyS) mz += 1; if (k.KeyA) mx -= 1; if (k.KeyD) mx += 1;
+      mx += this.touchMove.x; mz += this.touchMove.y;
     }
     const sprint = k.ShiftLeft && this.ads < 0.2 && !this.crouching;
     const speed = this.crouching ? 1.4 : sprint ? 4.6 : 2.7;
     if (mx || mz) {
-      const len = Math.hypot(mx, mz); mx /= len; mz /= len;
+      const len = Math.hypot(mx, mz); if (len > 1) { mx /= len; mz /= len; }
       const s = Math.sin(this.yaw), c = Math.cos(this.yaw);
       this.pos.x += (mx * c + mz * s) * speed * dt;
       this.pos.z += (-mx * s + mz * c) * speed * dt;

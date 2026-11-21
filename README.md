@@ -14,7 +14,7 @@ npm install
 npm run dev
 ```
 
-Open the printed URL in a desktop browser (Chrome / Edge / Firefox). Mouse + keyboard required.
+Open the printed URL in a desktop browser (mouse and keyboard) or on a phone or tablet (touch controls).
 
 ## Deploy to Vercel
 
@@ -23,7 +23,27 @@ Import the repo in Vercel. It auto-detects Vite (`vercel.json` pins it anyway):
 - Build command: `npm run build`
 - Output directory: `dist`
 
-## Controls
+## Playing on a phone
+
+Phones and tablets get on-screen controls automatically. Play in landscape; you'll be prompted to turn the
+phone sideways.
+
+| Touch | Action |
+| --- | --- |
+| Left thumb (drag anywhere on the left) | Walk the rooftop |
+| Right thumb (drag anywhere on the right) | Aim |
+| FIRE | Shoot (keep your thumb on it and drag to aim as well) |
+| SCOPE | Scope in / out |
+| + / − and HOLD BREATH | Zoom and steady your aim (only shown while scoped) |
+| CROUCH, R, SWAP | Duck behind the parapet, reload, change rifle |
+| ❚❚ / ⛶ | Pause / full screen |
+
+Tapping DEPLOY goes full screen and locks to landscape where the browser allows it. iPhone Safari can't
+do full screen for web pages, so on iPhone use **Share → Add to Home Screen**, which opens the game without the
+browser bars. Phones default to **GRAPHICS: LOW**, and you can raise it on the menu. The game pauses when you
+switch apps.
+
+## Controls (desktop)
 
 | Input | Action |
 | --- | --- |
@@ -37,6 +57,7 @@ Import the repo in Vercel. It auto-detects Vite (`vercel.json` pins it anyway):
 | R | Reload |
 | 1–5 / Q | Swap rifle (once unlocked) |
 | Esc | Pause |
+| F | Full screen |
 
 ## The "Keh"
 
@@ -59,7 +80,8 @@ On every kill the game says "Keh". It uses the first one of these it finds:
   back into the showroom, comes out again and drives off in the X6.
 - **The valeter**, a bodybuilder, jet-washes a white Corsa outside the open shutter to the left of the showroom.
 
-Kev and the mechanic take turns visiting. Anyone you drop comes back on a later wave.
+Kev and the mechanic take turns visiting. Kill Kev Jones and Craig rings Merton Garages: the mechanic turns
+up a few seconds later. Anyone you drop comes back on a later wave.
 
 ## The rifle ladder
 
@@ -83,7 +105,7 @@ The voices are recordable, or you can drop sound files into `public/`:
 - `craig.mp3`: "Get yourself away!"
 - `mot.mp3`: "M-O-T done!"
 
-The Keh and Craig's line also have **🎙 record** buttons on the menu. Anything that isn't recorded or supplied
+All three also have **🎙 record** buttons on the menu (they work on phones too). Anything that isn't recorded or supplied
 falls back to the browser's text-to-speech.
 
 ## Shooting the cars up
@@ -113,6 +135,7 @@ Every car can be wrecked, including the four on display inside the showroom:
 
 **GRAPHICS** on the main menu cycles through these:
 
+- **LOW** (default on phones): reduced resolution, 1K shadows, simpler clouds, no bloom.
 - **MEDIUM**: 1x resolution, 2K shadows, no bloom. For laptops and integrated GPUs.
 - **HIGH** (default): up to 1.5x resolution, 4K shadows, bloom.
 - **ULTRA**: up to 2x resolution plus GTAO ambient occlusion.

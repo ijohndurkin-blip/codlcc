@@ -15,6 +15,7 @@ import { AudioEngine } from './audio.js';
 import { Player, WEAPONS, ORDER } from './player.js';
 import { Enemies } from './enemies.js';
 import { UI } from './ui.js';
+import { TouchControls } from './touch.js';
 
 const $ = (id) => document.getElementById(id);
 const nextFrame = () => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
@@ -47,7 +48,11 @@ const GradeShader = {
 };
 
 async function boot() {
-  if (matchMedia('(pointer: coarse)').matches) $('mobile-note').classList.remove('hidden');
+  const isTouch = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && !matchMedia('(pointer: fine)').matches);
+  document.body.classList.toggle('touch', isTouch);
+  const fsEl = document.documentElement;
+  const fsSupported = !!(fsEl.requestFullscreen || fsEl.webkitRequestFullscreen);
+  if (!fsSupported) document.body.classList.add('no-fs');
   await progress(5, 'Starting renderer…');
   const canvas = $('game');
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
@@ -95,7 +100,7 @@ async function boot() {
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
       float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
         return mix(mix(hash(i), hash(i+vec2(1.0,0.0)), f.x), mix(hash(i+vec2(0.0,1.0)), hash(i+vec2(1.0,1.0)), f.x), f.y); }
-      float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 6; i++){ v += a*noise(p); p = p*2.03 + 1.7; a *= 0.5; } return v; }
+      float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < OCT; i++){ v += a*noise(p); p = p*2.03 + 1.7; a *= 0.5; } return v; }
       void main(){
         vec3 d = normalize(vDir);
         if (d.y < 0.0) discard;
@@ -109,7 +114,7 @@ async function boot() {
         float fade = smoothstep(0.0, 0.22, d.y);
         gl_FragColor = vec4(col, cov * fade * 0.92);
       }`,
-    transparent: true, depthWrite: false, side: THREE.BackSide, fog: false,
+    transparent: true, depthWrite: false, side: THREE.BackSide, fog: false, defines: { OCT: 6 },
   });
   const clouds = new THREE.Mesh(new THREE.SphereGeometry(1300, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2), cloudMat);
   clouds.renderOrder = -1;
@@ -165,19 +170,23 @@ async function boot() {
   composer.addPass(grade);
 
   // ---------- graphics quality ----------
-  const QUALITY = ['MEDIUM', 'HIGH', 'ULTRA'];
-  let quality = 'HIGH';
-  try { quality = localStorage.getItem('lcc_gfx') || 'HIGH'; } catch (e) { /* ignore */ }
+  const QUALITY = ['LOW', 'MEDIUM', 'HIGH', 'ULTRA'];
+  let quality = isTouch ? 'LOW' : 'HIGH';
+  try { quality = localStorage.getItem(isTouch ? 'lcc_gfx_touch' : 'lcc_gfx') || quality; } catch (e) { /* ignore */ }
+  if (!QUALITY.includes(quality)) quality = 'HIGH';
   function applyQuality() {
-    const pr = quality === 'MEDIUM' ? 1 : quality === 'HIGH' ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2);
+    const dpr = window.devicePixelRatio;
+    const pr = quality === 'LOW' ? Math.min(dpr, 1) * (isTouch ? 0.85 : 1) : quality === 'MEDIUM' ? Math.min(dpr, isTouch ? 1.25 : 1) : quality === 'HIGH' ? Math.min(dpr, 1.5) : Math.min(dpr, 2);
     renderer.setPixelRatio(pr); composer.setPixelRatio(pr);
     renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight);
-    const sm = quality === 'MEDIUM' ? 2048 : 4096;
+    const sm = quality === 'LOW' ? 1024 : quality === 'MEDIUM' ? 2048 : 4096;
+    const oct = quality === 'LOW' ? 3 : quality === 'MEDIUM' ? 4 : 6;
+    if (cloudMat.defines.OCT !== oct) { cloudMat.defines.OCT = oct; cloudMat.needsUpdate = true; }
     if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
-    bloom.enabled = quality !== 'MEDIUM';
+    bloom.enabled = quality === 'HIGH' || quality === 'ULTRA';
     gtao.enabled = quality === 'ULTRA';
     $('btn-gfx').textContent = `GRAPHICS: ${quality}`;
-    try { localStorage.setItem('lcc_gfx', quality); } catch (e) { /* ignore */ }
+    try { localStorage.setItem(isTouch ? 'lcc_gfx_touch' : 'lcc_gfx', quality); } catch (e) { /* ignore */ }
   }
   $('btn-gfx').onclick = () => { quality = QUALITY[(QUALITY.indexOf(quality) + 1) % QUALITY.length]; applyQuality(); };
   applyQuality();
@@ -322,6 +331,7 @@ async function boot() {
   const WHO = { craig: 'Craig', kev: 'Kev Jones', mech: 'the Merton Garages mechanic', val: 'the valeter' };
   function civilianKilled(c, { headshot = false, dist = 0 } = {}) {
     G.kills++;
+    civ.personKilled(c);
     const pts = 500 + (headshot ? 50 : 0);
     G.score += pts;
     ui.points([[`+500 ${c.name} DOWN`, true], ...(headshot ? [['+50 HEADSHOT', false]] : [])]);
@@ -437,7 +447,39 @@ async function boot() {
   const screens = (name) => {
     for (const id of ['loading', 'menu', 'pause', 'gameover', 'record']) $(id).classList.toggle('hidden', id !== name);
     ui.show(name === 'hud' || name === 'pause');
+    document.body.classList.toggle('playing', name === 'hud');
+    if (touch) touch.show(isTouch && name === 'hud');
   };
+  let touch = null;
+  const isFull = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  function setFullscreen(on) {
+    try {
+      if (on && !isFull()) {
+        const p = fsEl.requestFullscreen ? fsEl.requestFullscreen({ navigationUI: 'hide' }) : fsEl.webkitRequestFullscreen();
+        if (p && p.then) p.then(() => { try { screen.orientation?.lock?.('landscape').catch(() => {}); } catch (e) { /* ignore */ } }).catch(() => {});
+      } else if (!on && isFull()) {
+        (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      }
+    } catch (e) { /* ignore */ }
+  }
+  const toggleFullscreen = () => setFullscreen(!isFull());
+  const fsLabel = () => { for (const id of ['btn-fs', 'btn-fs2']) $(id).textContent = isFull() ? '⛶ EXIT FULL SCREEN' : '⛶ FULL SCREEN'; };
+  document.addEventListener('fullscreenchange', fsLabel);
+  document.addEventListener('webkitfullscreenchange', fsLabel);
+  $('btn-fs').onclick = toggleFullscreen;
+  $('btn-fs2').onclick = toggleFullscreen;
+  window.addEventListener('keydown', (e) => { if (e.code === 'KeyF' && G.state !== 'menu' || e.code === 'KeyF' && document.activeElement === document.body) toggleFullscreen(); });
+
+  function pauseGame() {
+    if (G.state !== 'playing') return;
+    G.state = 'paused'; screens('pause');
+    if (!isTouch) document.exitPointerLock?.();
+  }
+  function resumeGame() {
+    if (isTouch) { G.state = 'playing'; screens('hud'); }
+    else lock();
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
   function lock() {
     try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* ignore */ }
@@ -457,11 +499,16 @@ async function boot() {
     player.enabled = true;
     G.state = 'playing';
     screens('hud');
-    lock();
+    if (isTouch) {
+      setFullscreen(true);
+      audio.primeSpeech();
+    } else lock();
     ui.setScore(0);
     ui.stamp(['OPERATION: FORECOURT', `Day 1 — ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`, 'Brewster St, Bootle, Merseyside', 'Rooftop overwatch — opposite Liverpool Car Centre']);
     setTimeout(() => sayRadio('HQ', 'Iranian troops have taken Liverpool Car Centre. You\'re our only eyes on that forecourt.', 4200), 1200);
-    setTimeout(() => sayRadio('HQ', 'Hold that roof. Hold <b>RMB</b> to scope, <b>SHIFT</b> to steady, <b>C</b> to get your head down.', 4500), 5600);
+    setTimeout(() => sayRadio('HQ', isTouch
+      ? 'Hold that roof. Tap <b>SCOPE</b>, then <b>FIRE</b>. Hit <b>CROUCH</b> to get your head down.'
+      : 'Hold that roof. Hold <b>RMB</b> to scope, <b>SHIFT</b> to steady, <b>C</b> to get your head down.', 4500), 5600);
     G.waveTimer = setTimeout(() => startWave(1), 7500);
   }
 
@@ -496,24 +543,27 @@ async function boot() {
     if (!locked && G.state === 'playing') { G.state = 'paused'; screens('pause'); }
     else if (locked && G.state === 'paused') { G.state = 'playing'; screens('hud'); }
   });
-  canvas.addEventListener('click', () => { if (G.state === 'playing' && document.pointerLockElement !== canvas) lock(); });
+  canvas.addEventListener('click', () => { if (!isTouch && G.state === 'playing' && document.pointerLockElement !== canvas) lock(); });
   $('btn-deploy').onclick = deploy;
   $('btn-again').onclick = deploy;
   $('btn-menu').onclick = toMenu;
-  $('btn-resume').onclick = () => lock();
+  $('btn-resume').onclick = resumeGame;
   $('btn-quit').onclick = toMenu;
-  $('sens').oninput = (e) => { player.sensitivity = 0.0022 * parseFloat(e.target.value); };
+  $('sens').oninput = (e) => { player.sensitivity = 0.0022 * parseFloat(e.target.value); player.sensitivityScale = parseFloat(e.target.value); };
+  touch = new TouchControls({ player, onPause: pauseGame });
+  $('tb-fs').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); toggleFullscreen(); });
 
   // ---------- keh recording ----------
   const SRC = (n) => ({ recorded: 'YOUR RECORDING ✔', file: `${n}.mp3` })[audio.clipSource(n)] || 'built-in (text-to-speech)';
   const kehStatus = () => {
-    $('keh-status').textContent = `Keh voice: ${SRC('keh')} · Craig's voice: ${SRC('craig')}`;
-    $('btn-clearkeh').classList.toggle('hidden', audio.clipSource('keh') !== 'recorded' && audio.clipSource('craig') !== 'recorded');
+    $('keh-status').textContent = `Keh: ${SRC('keh')} · Craig: ${SRC('craig')} · MOT: ${SRC('mot')}`;
+    $('btn-clearkeh').classList.toggle('hidden', !['keh', 'craig', 'mot'].some((n) => audio.clipSource(n) === 'recorded'));
   };
   let recMode = 'keh';
   const REC = {
     keh: { title: 'RECORD YOUR KEH', text: 'Hit record and say <b>"Keh"</b>. It plays every time you drop someone.', secs: 1.5 },
     craig: { title: "RECORD CRAIG'S SHOUT", text: 'Hit record and do your best wee Scottish <b>"Get yourself away!"</b>. Craig shouts it from the showroom door.', secs: 2.5 },
+    mot: { title: "RECORD THE MECHANIC", text: 'Hit record and shout <b>"M-O-T done!"</b>. The Merton Garages mechanic yells it while waving the paper.', secs: 2 },
   };
   const openRec = (mode) => {
     recMode = mode; audio.init();
@@ -523,7 +573,9 @@ async function boot() {
   };
   $('btn-testkeh').onclick = () => { audio.init(); setTimeout(() => { audio.keh(); kehStatus(); }, 150); ui.kehPop(); };
   $('btn-testcraig').onclick = () => { audio.init(); setTimeout(() => { audio.say('craig'); kehStatus(); }, 150); };
-  $('btn-clearkeh').onclick = () => { audio.clearRecordedClip('keh'); audio.clearRecordedClip('craig'); setTimeout(kehStatus, 300); };
+  $('btn-testmot').onclick = () => { audio.init(); setTimeout(() => { audio.say('mot'); kehStatus(); }, 150); };
+  $('btn-record-mot').onclick = () => openRec('mot');
+  $('btn-clearkeh').onclick = () => { for (const n of ['keh', 'craig', 'mot']) audio.clearRecordedClip(n); setTimeout(kehStatus, 300); };
   $('btn-record').onclick = () => openRec('keh');
   $('btn-record-craig').onclick = () => openRec('craig');
   $('rec-close').onclick = () => { $('record').classList.add('hidden'); kehStatus(); };
@@ -548,12 +600,12 @@ async function boot() {
         const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
         try {
           await audio.setRecordedClip(mode, blob);
-          msg.textContent = mode === 'keh' ? 'Saved! That\'s your Keh now.' : 'Saved! That\'s Craig now.';
-          if (mode === 'keh') audio.keh(); else audio.say('craig');
+          msg.textContent = { keh: 'Saved! That\'s your Keh now.', craig: 'Saved! That\'s Craig now.', mot: 'Saved! That\'s the mechanic now.' }[mode];
+          if (mode === 'keh') audio.keh(); else audio.say(mode);
           kehStatus();
         } catch (e) { msg.textContent = 'Could not decode the recording — try again.'; }
       };
-      msg.textContent = mode === 'keh' ? 'Recording… say "Keh"!' : 'Recording… "Get yourself away!"';
+      msg.textContent = { keh: 'Recording… say "Keh"!', craig: 'Recording… "Get yourself away!"', mot: 'Recording… "M-O-T done!"' }[mode];
       rec.start();
       setTimeout(() => rec.stop(), REC[mode].secs * 1000);
     } catch (e) { msg.textContent = 'Microphone permission denied.'; }
@@ -608,6 +660,7 @@ async function boot() {
       ui.setWave(Math.max(1, G.wave), enemies.remaining);
       ui.drawMinimap(player, enemies, cars, civ);
       ui.drawCompass(player.yaw);
+      if (isTouch) touch.sync();
       // grenade warning
       let gAng = null, gd = 9;
       for (const g of enemies.grenades) {
@@ -645,7 +698,7 @@ async function boot() {
   const startMusicOnce = () => { audio.init(); if (G.state === 'menu') audio.startMusic(); kehStatus(); window.removeEventListener('pointerdown', startMusicOnce); };
   window.addEventListener('pointerdown', startMusicOnce);
   kehStatus();
-  window.__lcc = { G, player, enemies, camera, scene, deploy, startWave, fx, renderer, carSys, civ };
+  window.__lcc = { G, player, enemies, camera, scene, deploy, startWave, fx, renderer, carSys, civ, touch, isTouch };
 }
 
 boot().catch((e) => {

@@ -373,6 +373,12 @@ export class AudioEngine {
     } catch (e) { return false; }
   }
 
+  // iOS / Android only allow speech after a user gesture: call this from a tap
+  primeSpeech() {
+    if (!('speechSynthesis' in window)) return;
+    try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) { /* ignore */ }
+  }
+
   playClip(name, gain = 1.4) {
     const c = this.clips && this.clips[name];
     if (!c || !c.buffer || !this.ctx) return false;

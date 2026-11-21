@@ -2,7 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#050605" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="LCC Sniper" />
   <title>Liverpool Car Centre</title>
   <meta name="description" content="A rooftop sniper defence game set on the forecourt of Liverpool Car Centre, Brewster St, Bootle." />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -29,11 +34,24 @@
       <div class="menu-sub">75 A5038 · Brewster St · Bootle, Merseyside</div>
       <div class="menu-buttons">
         <button id="btn-deploy" class="mbtn primary">DEPLOY</button>
-        <button id="btn-record" class="mbtn">🎙 RECORD YOUR "KEH"</button>
-        <button id="btn-record-craig" class="mbtn">🎙 RECORD CRAIG'S SHOUT</button>
-        <div class="row-btns"><button id="btn-testkeh" class="mbtn small">▶ TEST KEH</button><button id="btn-testcraig" class="mbtn small">▶ TEST CRAIG</button></div>
+        <div class="voices">
+          <div class="voices-label">🎙 RECORD THE VOICES</div>
+          <div class="row-btns">
+            <button id="btn-record" class="mbtn small">YOUR "KEH"</button>
+            <button id="btn-record-craig" class="mbtn small">CRAIG</button>
+            <button id="btn-record-mot" class="mbtn small">"M-O-T DONE"</button>
+          </div>
+          <div class="row-btns">
+            <button id="btn-testkeh" class="mbtn small">▶ KEH</button>
+            <button id="btn-testcraig" class="mbtn small">▶ CRAIG</button>
+            <button id="btn-testmot" class="mbtn small">▶ MOT</button>
+          </div>
+        </div>
         <button id="btn-clearkeh" class="mbtn small hidden">✕ RESET RECORDED VOICES</button>
-        <button id="btn-gfx" class="mbtn small">GRAPHICS: HIGH</button>
+        <div class="row-btns">
+          <button id="btn-gfx" class="mbtn small">GRAPHICS: HIGH</button>
+          <button id="btn-fs" class="mbtn small fs-btn">⛶ FULL SCREEN</button>
+        </div>
       </div>
       <div id="keh-status" class="keh-status">Keh voice: built-in</div>
       <div class="menu-brief">
@@ -45,6 +63,17 @@
     </div>
     <div class="menu-controls">
       <div class="ctl-title">CONTROLS</div>
+      <div class="ctl-touch">
+        <div><kbd>LEFT THUMB</kbd> Drag to walk the roof</div>
+        <div><kbd>RIGHT THUMB</kbd> Drag to aim</div>
+        <div><kbd>SCOPE</kbd> Scope in / out</div>
+        <div><kbd>FIRE</kbd> Shoot (drag on it to aim too)</div>
+        <div><kbd>+ / −</kbd> Scope zoom · <kbd>HOLD BREATH</kbd> steady</div>
+        <div><kbd>CROUCH</kbd> Duck behind the parapet</div>
+        <div><kbd>R</kbd> Reload · <kbd>SWAP</kbd> Change rifle</div>
+        <div><kbd>❚❚</kbd> Pause · <kbd>⛶</kbd> Full screen</div>
+      </div>
+      <div class="ctl-desk">
       <div><kbd>MOUSE</kbd> Aim</div>
       <div><kbd>LMB</kbd> Fire</div>
       <div><kbd>RMB</kbd> (hold) Scope</div>
@@ -54,7 +83,8 @@
       <div><kbd>W A S D</kbd> Move along the roof</div>
       <div><kbd>R</kbd> Reload</div>
       <div><kbd>1</kbd>–<kbd>5</kbd> / <kbd>Q</kbd> Swap rifle (once unlocked)</div>
-      <div><kbd>ESC</kbd> Pause</div>
+      <div><kbd>ESC</kbd> Pause · <kbd>F</kbd> Full screen</div>
+      </div>
       <div class="ctl-tip">TIP: Shoot the red jerry cans on their trucks. Shoot through car windows. Crouch to dodge fire &amp; reload. Shoot the cars up — tyres, glass, roof signs, the lot. Every time you drop Craig, Kev Jones or the Merton Garages mechanic you get a better rifle…</div>
     </div>
   </div>
@@ -139,6 +169,7 @@
       <div class="pause-title">PAUSED</div>
       <button id="btn-resume" class="mbtn primary">RESUME</button>
       <button id="btn-quit" class="mbtn">QUIT TO MENU</button>
+      <button id="btn-fs2" class="mbtn small fs-btn">⛶ FULL SCREEN</button>
       <label class="sens">MOUSE SENSITIVITY <input id="sens" type="range" min="0.5" max="2.5" step="0.1" value="1" /></label>
     </div>
   </div>
@@ -154,7 +185,22 @@
     </div>
   </div>
 
-  <div id="mobile-note" class="hidden">Best played on a desktop with a mouse &amp; keyboard.</div>
+  <!-- ===== TOUCH CONTROLS ===== -->
+  <div id="touch" class="hidden">
+    <div id="tz-stick"><div id="stick-base"><div id="stick-knob"></div></div><div class="tz-hint">MOVE</div></div>
+    <div id="tz-look"><div class="tz-hint">DRAG TO AIM</div></div>
+    <button class="tbtn" id="tb-pause" aria-label="Pause">❚❚</button>
+    <button class="tbtn" id="tb-fs" aria-label="Full screen">⛶</button>
+    <button class="tbtn big" id="tb-fire">FIRE</button>
+    <button class="tbtn" id="tb-scope">SCOPE</button>
+    <button class="tbtn" id="tb-crouch">CROUCH</button>
+    <button class="tbtn" id="tb-reload">R</button>
+    <button class="tbtn hidden" id="tb-swap">SWAP</button>
+    <button class="tbtn hidden" id="tb-breath">HOLD<br/>BREATH</button>
+    <button class="tbtn small hidden" id="tb-zin">+</button>
+    <button class="tbtn small hidden" id="tb-zout">−</button>
+  </div>
+  <div id="rotate"><div class="rot-icon">📱↻</div><div>Turn your phone sideways</div></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>
